@@ -1,19 +1,14 @@
 {
-  "name": "fluent-asserts",
+  "name": "fluent-asserts-vibe",
   "authors": [
     "Szabo Bogdan"
   ],
-  "description": "Fluent assertions done right",
-  "copyright": "Copyright © 2018, Szabo Bogdan",
+  "description": "Fluent assertions for Vibe.d",
+  "copyright": "Copyright © 2020, Szabo Bogdan",
   "license": "MIT",
   "homepage": "http://fluentasserts.szabobogdan.com/",
   "dependencies": {
-    "libdparse": "~>0.8.7",
-    "ddmp": "~>0.0.1-0.dev.3",
-    "unit-threaded": {
-      "version": "*",
-      "optional": true
-    },
+    "fluent-asserts": "~>0.12.0",
     "vibe-d:data": {
       "version": "*",
       "optional": true
@@ -34,14 +29,7 @@
       "name": "trial",
       "sourcePaths": [
         "source"
-      ],
-      "dependencies": {
-        "libdparse": "~>0.8.7",
-        "ddmp": "~>0.0.1-0.dev.3",
-        "vibe-d:data": "*",
-        "vibe-d:http": "*",
-        "openssl": "*"
-      }
+      ]
     }
   ]
 }
