@@ -203,7 +203,7 @@ final class RequestRouter {
     import vibe.inet.webform;
     import vibe.stream.memory;
 
-    auto data = new ubyte[5000];
+    auto data = new ubyte[50000];
 
     static if(__traits(compiles, createMemoryStream(data) )) {
       MemoryStream stream = createMemoryStream(data);
