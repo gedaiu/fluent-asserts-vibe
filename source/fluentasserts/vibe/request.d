@@ -129,7 +129,7 @@ final class RequestRouter {
 
   RequestRouter expectHeaderExist(string name, const string file = __FILE__, const size_t line = __LINE__) {
     void localExpectHeaderExist(Response res) {
-      auto result = res.headers.keys.should.contain(name, file, line);
+      auto result = expect(res.headers.keys, file, line).to.contain(name);
       result.message = new MessageResult("Response header `" ~ name ~ "` is missing.");
     }
 
@@ -142,7 +142,7 @@ final class RequestRouter {
     expectHeaderExist(name, file, line);
 
     void localExpectedHeader(Response res) {
-      auto result = res.headers[name].should.equal(value, file, line);
+      auto result = expect(res.headers[name], file, line).should.equal(value);
       result.message = new MessageResult("Response header `" ~ name ~ "` has an unexpected value. Expected `"
         ~ value ~ "` != `" ~ res.headers[name].to!string ~ "`");
     }
@@ -156,7 +156,7 @@ final class RequestRouter {
     expectHeaderExist(name, file, line);
 
     void expectHeaderContains(Response res) {
-      auto result = res.headers[name].should.contain(value, file, line);
+      auto result = expect(res.headers[name], file, line).contain(value);
       result.message = new MessageResult("Response header `" ~ name ~ "` has an unexpected value. Expected `"
         ~ value ~ "` not found in `" ~ res.headers[name].to!string ~ "`");
     }

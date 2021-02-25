@@ -8,15 +8,11 @@
   "license": "MIT",
   "homepage": "http://fluentasserts.szabobogdan.com/",
   "dependencies": {
-    "fluent-asserts": "~>0.12",
-    "vibe-d:data": {
-      "version": "*",
-      "optional": true
+    "fluent-asserts": {
+      "path": "../fluent-asserts"
     },
-    "vibe-d:http": {
-      "version": "*",
-      "optional": true
-    }
+    "vibe-d:data": "*",
+    "vibe-d:http": "*"
   },
   "configurations": [
     {
@@ -28,7 +24,8 @@
     {
       "name": "trial",
       "sourcePaths": [
-        "source"
+        "source",
+        "test/operations"
       ]
     }
   ]

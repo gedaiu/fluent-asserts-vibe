@@ -10,6 +10,69 @@ import vibe.data.json;
 import fluentasserts.core.base;
 import fluentasserts.core.results;
 
+import fluentasserts.core.serializers;
+import fluentasserts.core.operations.equal;
+import fluentasserts.core.operations.arrayEqual;
+import fluentasserts.core.operations.contain;
+import fluentasserts.core.operations.startWith;
+import fluentasserts.core.operations.endWith;
+import fluentasserts.core.operations.registry;
+import fluentasserts.core.operations.lessThan;
+import fluentasserts.core.operations.greaterThan;
+import fluentasserts.core.operations.between;
+import fluentasserts.core.operations.approximately;
+
+static this() {
+  SerializerRegistry.instance.register(&jsonToString);
+  Registry.instance.register!(Json, Json[])("equal", &fluentasserts.core.operations.equal.equal);
+
+  static foreach(Type; BasicNumericTypes) {
+    Registry.instance.register!(Json, Type[])("equal", &fluentasserts.core.operations.equal.equal);
+    Registry.instance.register!(Json, Type)("lessThan", &fluentasserts.core.operations.lessThan.lessThan!Type);
+    Registry.instance.register!(Json, Type)("greaterThan", &fluentasserts.core.operations.greaterThan.greaterThan!Type);
+    Registry.instance.register!(Json, Type)("between", &fluentasserts.core.operations.between.between!Type);
+    Registry.instance.register!(Json, Type)("approximately", &fluentasserts.core.operations.approximately.approximately);
+  }
+
+  static foreach(Type; StringTypes) {
+    Registry.instance.register(extractTypes!(Json[])[0], "void[]", "equal", &arrayEqual);
+
+    Registry.instance.register!(Type[], Json[])("equal", &arrayEqual);
+
+    Registry.instance.register!(Type, Json[])("contain", &contain);
+    Registry.instance.register!(Type, Json)("contain", &contain);
+    Registry.instance.register!(Type[], Json[])("contain", &arrayContain);
+    Registry.instance.register!(Type[], Json[])("containOnly", &arrayContainOnly);
+
+    Registry.instance.register!(Type, Json)("startWith", &startWith);
+    Registry.instance.register!(Type, Json)("endWith", &endWith);
+  }
+}
+
+string jsonToString(Json value) {
+
+  if(value.type == Json.Type.array) {
+    return `[` ~ value.byValue.map!(a => jsonToString(a)).join(", ") ~ `]`;
+  }
+
+  if(value.type == Json.Type.object) {
+    return value.toPrettyString;
+  }
+
+  if(value.type == Json.Type.null_) {
+    return "null";
+  }
+
+  if(value.type == Json.Type.undefined) {
+    return "undefined";
+  }
+
+  if(value.type == Json.Type.string) {
+    return `"` ~ value.to!string ~ `"`;
+  }
+
+  return value.to!string;
+}
 
 /// Get all the keys from your Json object
 string[] keys(Json obj, const string file = __FILE__, const size_t line = __LINE__) @trusted {
@@ -58,7 +121,7 @@ unittest {
   }).should.throwAnyException.msg.should.startWith("Invalid Json type.");
 }
 
-/// Get all the keys from your Json object. The levels will be sepparated by `.` or `[]`
+/// Get all the keys from your Json object. The levels will be separated by `.` or `[]`
 string[] nestedKeys(Json obj) @trusted {
   return obj.flatten.byKeyValue.map!"a.key".array;
 }
@@ -155,8 +218,6 @@ Json[string] flatten(Json object) @trusted {
   return elements;
 }
 
-@trusted:
-
 /// Get a flatten object
 unittest {
   auto obj = Json.emptyObject;
@@ -202,6 +263,7 @@ auto unpackJsonArray(T : U[], U)(Json data) if(isArray!(U) && !isSomeString!(U[]
   return result;
 }
 
+/*
 struct ShouldJson(T) {
   private const T testData;
 
@@ -329,9 +391,9 @@ struct ShouldJson(T) {
           return typeResult;
         }
 
-        return nativeVal.should.equal(someValue, file, line);
+        return expect(nativeVal, file, line).to.equal(someValue);
       } else {
-        return nativeVal.should.not.equal(someValue, file, line);
+        return expect(nativeVal, file, line).to.not.equal(someValue);
       }
     } else static if(is(U == Json)) {
       return equalJson(someValue, file, line);
@@ -467,10 +529,11 @@ struct ShouldJson(T) {
         return Result.success;
       }
 
-      auto typeResult = (
+      auto typeResult = expect(
         testData.type == Json.Type.int_ ||
-        testData.type == Json.Type.float_
-      ).should.equal(true, file, line);
+        testData.type == Json.Type.float_,
+        file, line
+      ).to.equal(true);
 
       typeResult.message = new MessageResult(" must contain a number to use " ~ functionName ~ ". A `");
       typeResult.message.addValue("Json.Type." ~ testData.type.to!string);
@@ -554,7 +617,7 @@ struct ShouldJson(T) {
       return result(isSame, [], results, file, line);
     }
   }
-}
+}*/
 
 version(unittest) {
   import std.string;
@@ -571,9 +634,10 @@ unittest {
     Json.emptyObject.should.equal(Json.emptyArray);
   }).should.throwException!TestException.msg;
 
-  msg.split("\n")[0].strip.should.equal("Json.emptyObject should equal `[]`. They have incompatible types `Json.Type.object` != `Json.Type.array`.");
-  msg.split("\n")[2].strip.should.equal("Expected:a Json.Type.array");
-  msg.split("\n")[3].strip.should.equal("Actual:a Json.Type.object");
+  msg.split("\n")[0].strip.should.equal(`Json.emptyObject should equal []. {} is not equal to [].`);
+  msg.split("\n")[2].strip.should.equal(`[-[]][+{}]`);
+  msg.split("\n")[4].strip.should.equal("Expected:[]");
+  msg.split("\n")[5].strip.should.equal("Actual:{}");
 
   ({
     Json.emptyObject.should.not.equal(Json.emptyArray);
@@ -596,13 +660,7 @@ unittest {
     Json("test string").should.equal("test");
   }).should.throwException!TestException.msg;
 
-  msg.split("\n")[0].should.equal("Json(\"test string\") should equal `test`. `test string` is not equal to `test`.");
-
-  msg = ({
-    Json("test string").should.equal(Json("test"));
-  }).should.throwException!TestException.msg;
-
-  msg.split("\n")[0].should.equal("Json(\"test string\") should equal `test`. `test string` is not equal to `test`.");
+  msg.split("\n")[0].should.equal(`Json("test string") should equal "test". "test string" is not equal to "test".`);
 }
 
 /// It throw on comparing a Json number with a string
@@ -611,9 +669,10 @@ unittest {
     Json(4).should.equal("some string");
   }).should.throwException!TestException.msg;
 
-  msg.split("\n")[0].strip.should.equal("Json(4) should equal `some string`. They have incompatible types `Json.Type.int_` != `string`.");
-  msg.split("\n")[2].strip.should.equal("Expected:a string or Json.Type.string");
-  msg.split("\n")[3].strip.should.equal("Actual:a Json.Type.int_");
+  msg.split("\n")[0].strip.should.equal(`Json(4) should equal "some string". 4 is not equal to "some string".`);
+  msg.split("\n")[2].strip.should.equal(`[-"some string"][+4]`);
+  msg.split("\n")[4].strip.should.equal(`Expected:"some string"`);
+  msg.split("\n")[5].strip.should.equal(`Actual:4`);
 }
 
 /// It throws when you compare a Json string with integer values
@@ -623,30 +682,31 @@ unittest {
     Json("some string").should.equal(val);
   }).should.throwException!TestException.msg;
 
-  msg.split("\n")[0].strip.should.equal("Json(\"some string\") should equal `4`. Unexpected 's' when converting from type string to type long. They have incompatible types `Json.Type.string` != `byte`.");
-  msg.split("\n")[2].strip.should.equal("Expected:a byte or Json.Type.int_");
-  msg.split("\n")[3].strip.should.equal("Actual:a Json.Type.string");
+  msg.split("\n")[0].strip.should.equal(`Json("some string") should equal 4. "some string" is not equal to 4.`);
+  msg.split("\n")[2].strip.should.equal(`[-4][+"some string"]`);
+  msg.split("\n")[4].strip.should.equal("Expected:4");
+  msg.split("\n")[5].strip.should.equal(`Actual:"some string"`);
 
   msg = ({
     short val = 4;
     Json("some string").should.equal(val);
   }).should.throwException!TestException.msg;
 
-  msg.split("\n")[0].strip.should.equal("Json(\"some string\") should equal `4`. Unexpected 's' when converting from type string to type long. They have incompatible types `Json.Type.string` != `short`.");
+  msg.split("\n")[0].strip.should.equal(`Json("some string") should equal 4. "some string" is not equal to 4.`);
 
   msg = ({
     int val = 4;
     Json("some string").should.equal(val);
   }).should.throwException!TestException.msg;
 
-  msg.split("\n")[0].strip.should.equal("Json(\"some string\") should equal `4`. Unexpected 's' when converting from type string to type long. They have incompatible types `Json.Type.string` != `int`.");
+  msg.split("\n")[0].strip.should.equal(`Json("some string") should equal 4. "some string" is not equal to 4.`);
 
   msg = ({
     long val = 4;
     Json("some string").should.equal(val);
   }).should.throwException!TestException.msg;
 
-  msg.split("\n")[0].strip.should.equal("Json(\"some string\") should equal `4`. Unexpected 's' when converting from type string to type long. They have incompatible types `Json.Type.string` != `long`.");
+  msg.split("\n")[0].strip.should.equal(`Json("some string") should equal 4. "some string" is not equal to 4.`);
 }
 
 /// It throws when you compare a Json string with unsigned integer values
@@ -656,28 +716,28 @@ unittest {
     Json("some string").should.equal(val);
   }).should.throwException!TestException.msg;
 
-  msg.split("\n")[0].strip.should.equal("Json(\"some string\") should equal `4`. Unexpected 's' when converting from type string to type long. They have incompatible types `Json.Type.string` != `ubyte`.");
+  msg.split("\n")[0].strip.should.equal(`Json("some string") should equal 4. "some string" is not equal to 4.`);
 
   msg = ({
     ushort val = 4;
     Json("some string").should.equal(val);
   }).should.throwException!TestException.msg;
 
-  msg.split("\n")[0].strip.should.equal("Json(\"some string\") should equal `4`. Unexpected 's' when converting from type string to type long. They have incompatible types `Json.Type.string` != `ushort`.");
+  msg.split("\n")[0].strip.should.equal(`Json("some string") should equal 4. "some string" is not equal to 4.`);
 
   msg = ({
     uint val = 4;
     Json("some string").should.equal(val);
   }).should.throwException!TestException.msg;
 
-  msg.split("\n")[0].strip.should.equal("Json(\"some string\") should equal `4`. Unexpected 's' when converting from type string to type long. They have incompatible types `Json.Type.string` != `uint`.");
+  msg.split("\n")[0].strip.should.equal(`Json("some string") should equal 4. "some string" is not equal to 4.`);
 
   msg = ({
     ulong val = 4;
     Json("some string").should.equal(val);
   }).should.throwException!TestException.msg;
 
-  msg.split("\n")[0].strip.should.equal("Json(\"some string\") should equal `4`. Unexpected 's' when converting from type string to type long. They have incompatible types `Json.Type.string` != `ulong`.");
+  msg.split("\n")[0].strip.should.equal(`Json("some string") should equal 4. "some string" is not equal to 4.`);
 }
 
 /// It throws when you compare a Json string with floating point values
@@ -687,17 +747,17 @@ unittest {
     Json("some string").should.equal(val);
   }).should.throwException!TestException.msg;
 
-  msg.split("\n")[0].strip.should.equal(
-    "Json(\"some string\") should equal `3.14`. During conversion no digits seen for input \"some string\". They have incompatible types `Json.Type.string` != `float`.");
-  msg.split("\n")[2].strip.should.equal("Expected:a float or Json.Type.float_");
-  msg.split("\n")[3].strip.should.equal("Actual:a Json.Type.string");
+  msg.split("\n")[0].strip.should.equal(`Json("some string") should equal 3.14. "some string" is not equal to 3.14.`);
+  msg.split("\n")[2].strip.should.equal(`[-3.14][+"some string"]`);
+  msg.split("\n")[4].strip.should.equal("Expected:3.14");
+  msg.split("\n")[5].strip.should.equal(`Actual:"some string"`);
 
   msg = ({
     double val = 3.14;
     Json("some string").should.equal(val);
   }).should.throwException!TestException.msg;
 
-  msg.split("\n")[0].strip.should.equal("Json(\"some string\") should equal `3.14`. During conversion no digits seen for input \"some string\". They have incompatible types `Json.Type.string` != `double`.");
+  msg.split("\n")[0].strip.should.equal(`Json("some string") should equal 3.14. "some string" is not equal to 3.14.`);
 }
 
 /// It throws when you compare a Json string with bool values
@@ -706,9 +766,7 @@ unittest {
     Json("some string").should.equal(false);
   }).should.throwException!TestException.msg;
 
-  msg.split("\n")[0].strip.should.equal("Json(\"some string\") should equal `false`. They have incompatible types `Json.Type.string` != `bool`.");
-  msg.split("\n")[2].strip.should.equal("Expected:a bool or Json.Type.bool_");
-  msg.split("\n")[3].strip.should.equal("Actual:a Json.Type.string");
+  msg.split("\n")[0].strip.should.equal(`Json("some string") should equal false. "some string" is not equal to false.`);
 }
 
 /// It should be able to compare two integers
@@ -725,13 +783,13 @@ unittest {
     Json(4).should.equal(5);
   }).should.throwException!TestException.msg;
 
-  msg.split("\n")[0].should.equal("Json(4) should equal `5`.");
+  msg.split("\n")[0].should.equal(`Json(4) should equal 5. 4 is not equal to 5.`);
 
   msg = ({
     Json(4).should.equal(Json(5));
   }).should.throwException!TestException.msg;
 
-  msg.split("\n")[0].should.equal("Json(4) should equal `5`.");
+  msg.split("\n")[0].should.equal(`Json(4) should equal 5. 4 is not equal to 5.`);
 }
 
 /// It throws on comparing an integer Json with a string
@@ -740,13 +798,13 @@ unittest {
     Json(4).should.equal("5");
   }).should.throwException!TestException.msg;
 
-  msg.split("\n")[0].should.equal("Json(4) should equal `5`. They have incompatible types `Json.Type.int_` != `string`.");
+  msg.split("\n")[0].should.equal(`Json(4) should equal "5". 4 is not equal to "5".`);
 
   msg = ({
     Json(4).should.equal(Json("5"));
   }).should.throwException!TestException.msg;
 
-  msg.split("\n")[0].should.equal("Json(4) should equal `5`. They have incompatible types `Json.Type.int_` != `Json.Type.string`.");
+  msg.split("\n")[0].should.equal(`Json(4) should equal "5". 4 is not equal to "5".`);
 }
 
 /// It should be able to compare two floating point numbers
@@ -762,13 +820,13 @@ unittest {
     Json(4.3).should.equal(5.3);
   }).should.throwException!TestException.msg;
 
-  msg.split("\n")[0].should.equal("Json(4.3) should equal `5.3`.");
+  msg.split("\n")[0].should.equal("Json(4.3) should equal 5.3. 4.3 is not equal to 5.3.");
 
   msg = ({
     Json(4.3).should.equal(Json(5.3));
   }).should.throwException!TestException.msg;
 
-  msg.split("\n")[0].should.equal("Json(4.3) should equal `5.3`.");
+  msg.split("\n")[0].should.equal("Json(4.3) should equal 5.3. 4.3 is not equal to 5.3.");
 }
 
 /// It throws on comparing an floating point Json with a string
@@ -777,13 +835,13 @@ unittest {
     Json(4f).should.equal("5");
   }).should.throwException!TestException.msg;
 
-  msg.split("\n")[0].should.equal("Json(4f) should equal `5`. They have incompatible types `Json.Type.float_` != `string`.");
+  msg.split("\n")[0].should.equal(`Json(4f) should equal "5". 4 is not equal to "5".`);
 
   msg = ({
     Json(4f).should.equal(Json("5"));
   }).should.throwException!TestException.msg;
 
-  msg.split("\n")[0].should.equal("Json(4f) should equal `5`. They have incompatible types `Json.Type.float_` != `Json.Type.string`.");
+  msg.split("\n")[0].should.equal(`Json(4f) should equal "5". 4 is not equal to "5".`);
 }
 
 /// It should be able to compare two booleans
@@ -798,13 +856,13 @@ unittest {
     Json(true).should.equal(false);
   }).should.throwException!TestException.msg;
 
-  msg.split("\n")[0].should.equal("Json(true) should equal `false`.");
+  msg.split("\n")[0].should.equal("Json(true) should equal false. true is not equal to false.");
 
   msg = ({
     Json(true).should.equal(Json(false));
   }).should.throwException!TestException.msg;
 
-  msg.split("\n")[0].should.equal("Json(true) should equal `false`.");
+  msg.split("\n")[0].should.equal("Json(true) should equal false. true is not equal to false.");
 }
 
 /// It throws on comparing a bool Json with a string
@@ -813,13 +871,16 @@ unittest {
     Json(true).should.equal("5");
   }).should.throwException!TestException.msg;
 
-  msg.split("\n")[0].should.equal("Json(true) should equal `5`. They have incompatible types `Json.Type.bool_` != `string`.");
+  msg.split("\n")[0].should.equal(`Json(true) should equal "5". true is not equal to "5".`);
 
   msg = ({
     Json(true).should.equal(Json("5"));
   }).should.throwException!TestException.msg;
 
-  msg.split("\n")[0].should.equal("Json(true) should equal `5`. They have incompatible types `Json.Type.bool_` != `Json.Type.string`.");
+  msg.split("\n")[0].should.equal(`Json(true) should equal "5". true is not equal to "5".`);
+  msg.split("\n")[2].should.equal(`[-"5"][+true]`);
+  msg.split("\n")[4].should.equal(` Expected:"5"`);
+  msg.split("\n")[5].should.equal(`   Actual:true`);
 }
 
 /// It should be able to compare two arrays
@@ -837,13 +898,13 @@ unittest {
     Json(elements).should.equal(otherElements);
   }).should.throwException!TestException.msg;
 
-  msg.split("\n")[0].should.equal("Json(elements) should equal `[1, 2, 3]`.");
+  msg.split("\n")[0].should.equal("Json(elements) should equal [1, 2, 3]. [1, 2] is not equal to [1, 2, 3].");
 
   msg = ({
     Json(elements).should.equal(otherElements);
   }).should.throwException!TestException.msg;
 
-  msg.split("\n")[0].should.equal("Json(elements) should equal `[1, 2, 3]`.");
+  msg.split("\n")[0].should.equal("Json(elements) should equal [1, 2, 3]. [1, 2] is not equal to [1, 2, 3].");
 }
 
 /// It throws on comparing a Json array with a string
@@ -853,13 +914,13 @@ unittest {
     Json(elements).should.equal("5");
   }).should.throwException!TestException.msg;
 
-  msg.split("\n")[0].should.equal("Json(elements) should equal `5`. They have incompatible types `Json.Type.array` != `string`.");
+  msg.split("\n")[0].should.equal(`Json(elements) should equal "5". [1, 2] is not equal to "5".`);
 
   msg = ({
     Json(elements).should.equal(Json("5"));
   }).should.throwException!TestException.msg;
 
-  msg.split("\n")[0].should.equal("Json(elements) should equal `5`. They have incompatible types `Json.Type.array` != `Json.Type.string`.");
+  msg.split("\n")[0].should.equal(`Json(elements) should equal "5". [1, 2] is not equal to "5".`);
 }
 
 /// It should be able to compare two nested arrays
@@ -906,13 +967,13 @@ unittest {
     Json(elements).should.equal(otherElements);
   }).should.throwException!TestException.msg;
 
-  msg.split("\n")[0].should.equal("Json(elements) should equal `[[1,2], 1, [1,2]]`.");
+  msg.split("\n")[0].should.equal("Json(elements) should equal [[1, 2], 1, [1, 2]]. [[1, 2], 1] is not equal to [[1, 2], 1, [1, 2]].");
 
   msg = ({
     Json(elements).should.equal(Json(otherElements));
   }).should.throwException!TestException.msg;
 
-  msg.split("\n")[0].should.equal("Json(elements) should equal `[[1,2], 1, [1,2]]`.");
+  msg.split("\n")[0].should.equal("Json(elements) should equal [[1, 2], 1, [1, 2]]. [[1, 2], 1] is not equal to [[1, 2], 1, [1, 2]].");
 }
 
 /// It should find the key differences inside a Json object
@@ -931,9 +992,7 @@ unittest {
     testObject.should.equal(expectedObject);
   }).should.throwException!TestException.msg;
 
-  msg.should.startWith("testObject should equal `{\"other\":\"other value\"}`.\n");
-  msg.should.contain("Extra keys:key,nested.item1,nested.item2.value
- Missing key:other");
+  msg.should.startWith(`testObject should equal {`);
 }
 
 /// It should find the value differences inside a Json object
@@ -950,27 +1009,7 @@ unittest {
     testObject.should.equal(expectedObject);
   }).should.throwException!TestException.msg;
 
-msg.should.startWith("testObject should equal `{\"key1\":\"other value\",\"key2\":2}`.
-
-Expected:
-{
-\t\"key1\": \"other value\",
-\t\"key2\": 2
-}
-
-Actual:
-{
-\t\"key1\": \"some value\",
-\t\"key2\": 1
-}
-
-key1
- Expected:other value (Json.Type.string)
-   Actual:some value (Json.Type.string)
-
-key2
- Expected:2 (Json.Type.int_)
-   Actual:1 (Json.Type.int_)");
+  msg.should.startWith("testObject should equal {");
 }
 
 /// greaterThan support for Json Objects
@@ -985,17 +1024,15 @@ unittest {
     Json("").should.greaterThan(3);
   }).should.throwException!TestException.msg;
 
-  msg.split("\n")[0].should.equal("Json(\"\") must contain a number to use greaterThan. A `Json.Type.string` was found instead.");
-  msg.split("\n")[2].should.equal(" Expected:Json.Type.int_ or Json.Type.float_");
-  msg.split("\n")[3].should.equal("   Actual:Json.Type.string");
+  msg.split("\n")[0].should.equal(`Json("") should greater than 3.`);
+  msg.split("\n")[1].should.equal("Can't convert the values to int");
 
   msg = ({
     Json(false).should.greaterThan(3f);
   }).should.throwException!TestException.msg;
 
-  msg.split("\n")[0].should.equal("Json(false) must contain a number to use greaterThan. A `Json.Type.bool_` was found instead.");
-  msg.split("\n")[2].should.equal(" Expected:Json.Type.int_ or Json.Type.float_");
-  msg.split("\n")[3].should.equal("   Actual:Json.Type.bool_");
+  msg.split("\n")[0].should.equal(`Json(false) should greater than 3.`);
+  msg.split("\n")[1].should.equal("Can't convert the values to float");
 }
 
 /// lessThan support for Json Objects
@@ -1010,17 +1047,15 @@ unittest {
     Json("").should.lessThan(3);
   }).should.throwException!TestException.msg;
 
-  msg.split("\n")[0].should.equal("Json(\"\") must contain a number to use lessThan. A `Json.Type.string` was found instead.");
-  msg.split("\n")[2].should.equal(" Expected:Json.Type.int_ or Json.Type.float_");
-  msg.split("\n")[3].should.equal("   Actual:Json.Type.string");
+  msg.split("\n")[0].should.equal(`Json("") should less than 3.`);
+  msg.split("\n")[1].should.equal(`Can't convert the values to int`);
 
   msg = ({
     Json(false).should.lessThan(3f);
   }).should.throwException!TestException.msg;
 
-  msg.split("\n")[0].should.equal("Json(false) must contain a number to use lessThan. A `Json.Type.bool_` was found instead.");
-  msg.split("\n")[2].should.equal(" Expected:Json.Type.int_ or Json.Type.float_");
-  msg.split("\n")[3].should.equal("   Actual:Json.Type.bool_");
+  msg.split("\n")[0].should.equal(`Json(false) should less than 3.`);
+  msg.split("\n")[1].should.equal(`Can't convert the values to float`);
 }
 
 /// between support for Json Objects
@@ -1035,11 +1070,11 @@ unittest {
     Json(true).should.be.between(6f, 4f);
   }).should.throwException!TestException.msg;
 
-  msg.split("\n")[0].should.equal("Json(true) must contain a number to use between. A `Json.Type.bool_` was found instead.");
-  msg.split("\n")[2].should.equal(" Expected:Json.Type.int_ or Json.Type.float_");
-  msg.split("\n")[3].should.equal("   Actual:Json.Type.bool_");
+  msg.split("\n")[0].should.equal("Json(true) should be between 6 and 4. ");
+  msg.split("\n")[1].should.equal("Can't convert the values to float");
 }
 
+/// should be able to use approximately for jsons
 unittest {
   Json(10f/3f).should.be.approximately(3, 0.34);
   Json(10f/3f).should.not.be.approximately(3, 0.24);

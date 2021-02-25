@@ -1,5 +1,7 @@
 module some.module;
 
+import std.exception;
+
 class Foo {
 
     this() {
