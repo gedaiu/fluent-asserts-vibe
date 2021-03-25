@@ -25,6 +25,9 @@ import fluentasserts.core.operations.approximately;
 static this() {
   SerializerRegistry.instance.register(&jsonToString);
   Registry.instance.register!(Json, Json[])("equal", &fluentasserts.core.operations.equal.equal);
+  Registry.instance.register!(Json[], Json[])("equal", &fluentasserts.core.operations.arrayEqual.arrayEqual);
+  Registry.instance.register!(Json[][], Json[][])("equal", &fluentasserts.core.operations.arrayEqual.arrayEqual);
+  Registry.instance.register!(Json, Json[][])("equal", &fluentasserts.core.operations.arrayEqual.arrayEqual);
 
   static foreach(Type; BasicNumericTypes) {
     Registry.instance.register!(Json, Type[])("equal", &fluentasserts.core.operations.equal.equal);
@@ -941,13 +944,13 @@ unittest {
     Json(elements).should.equal(otherElements);
   }).should.throwException!TestException.msg;
 
-  msg.split("\n")[0].should.equal("Json(elements) should equal `[[1,2], [10,20], [1,2]]`.");
+  msg.split("\n")[0].should.equal("Json(elements) should equal [[1, 2], [10, 20], [1, 2]]. [[1, 2], [10, 20]] is not equal to [[1, 2], [10, 20], [1, 2]].");
 
   msg = ({
     Json(elements).should.equal(Json(otherElements));
   }).should.throwException!TestException.msg;
 
-  msg.split("\n")[0].should.equal("Json(elements) should equal `[[1,2], [10,20], [1,2]]`.");
+  msg.split("\n")[0].should.equal("Json(elements) should equal [[1, 2], [10, 20], [1, 2]]. [[1, 2], [10, 20]] is not equal to [[1, 2], [10, 20], [1, 2]].");
 }
 
 /// It should be able to compare two nested arrays with different levels
@@ -1083,7 +1086,5 @@ unittest {
     Json("").should.be.approximately(3, 0.34);
   }).should.throwException!TestException.msg;
 
-  msg.split("\n")[0].should.equal("Json(\"\") must contain a number to use approximately. A `Json.Type.string` was found instead.");
-  msg.split("\n")[2].should.equal(" Expected:Json.Type.int_ or Json.Type.float_");
-  msg.split("\n")[3].should.equal("   Actual:Json.Type.string");
+  msg.should.contain(`Can't parse the provided arguments!`);
 }
