@@ -8,9 +8,7 @@
   "license": "MIT",
   "homepage": "http://fluentasserts.szabobogdan.com/",
   "dependencies": {
-    "fluent-asserts": {
-      "path": "../fluent-asserts"
-    },
+    "fluent-asserts":"~>0.14.0-alpha.2",
     "vibe-d:data": "*",
     "vibe-d:http": "*"
   },
