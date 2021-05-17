@@ -4,7 +4,7 @@ version(Have_vibe_d_data):
 
 import std.exception, std.conv, std.traits;
 import std.array, std.algorithm, std.typecons;
-import std.uni;
+import std.uni, std.string;
 
 import vibe.data.json;
 import fluentasserts.core.base;
@@ -53,13 +53,27 @@ static this() {
 }
 
 string jsonToString(Json value) {
+  return jsonToString(value, 0);
+}
+
+string jsonToString(Json value, size_t level) {
 
   if(value.type == Json.Type.array) {
-    return `[` ~ value.byValue.map!(a => jsonToString(a)).join(", ") ~ `]`;
+    string prefix = rightJustifier(``, level * 2, ' ').array;
+    return `[` ~ value.byValue.map!(a => jsonToString(a, level)).join(", ") ~ `]`;
   }
 
   if(value.type == Json.Type.object) {
-    return value.toPrettyString;
+    auto keys = value.keys;
+
+    if(keys.length == 0) {
+      return `{}`;
+    }
+
+    string prefix = rightJustifier(``, 2 + level * 2, ' ').array;
+    string endPrefix = rightJustifier(``, level * 2, ' ').array;
+
+    return "{\n" ~ keys.map!(key => prefix ~ `"` ~ key ~ `": ` ~ value[key].jsonToString(level + 1)).join(",\n") ~ "\n" ~ endPrefix ~ "}";
   }
 
   if(value.type == Json.Type.null_) {
@@ -93,6 +107,8 @@ string[] keys(Json obj, const string file = __FILE__, const size_t line = __LINE
     foreach(string key, Json value; obj.byKeyValue) {
       list ~= key;
     }
+
+    list = list.sort.array;
 
     return list;
   } else {
