@@ -25,6 +25,7 @@ import fluentasserts.core.operations.approximately;
 static this() {
   SerializerRegistry.instance.register(&jsonToString);
   Registry.instance.register!(Json, Json[])("equal", &fluentasserts.core.operations.equal.equal);
+  Registry.instance.register!(Json[], Json)("equal", &fluentasserts.core.operations.equal.equal);
   Registry.instance.register!(Json[], Json[])("equal", &fluentasserts.core.operations.arrayEqual.arrayEqual);
   Registry.instance.register!(Json[][], Json[][])("equal", &fluentasserts.core.operations.arrayEqual.arrayEqual);
   Registry.instance.register!(Json, Json[][])("equal", &fluentasserts.core.operations.arrayEqual.arrayEqual);
@@ -64,7 +65,7 @@ string jsonToString(Json value, size_t level) {
   }
 
   if(value.type == Json.Type.object) {
-    auto keys = value.keys;
+    auto keys = value.keys.sort;
 
     if(keys.length == 0) {
       return `{}`;
