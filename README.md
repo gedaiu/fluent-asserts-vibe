@@ -42,7 +42,7 @@ simple and nice tests. This is a library that improves your testing experience b
 
         request
             .get("/")
-            .end((Response response) => {
+            .end((Response response) => () {
                 response.bodyString.should.not.equal("hello");
             });
     }

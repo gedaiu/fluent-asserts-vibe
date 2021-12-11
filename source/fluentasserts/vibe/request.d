@@ -336,13 +336,13 @@ unittest {
   router.get("*", &sayHello);
   request(router)
     .get("/")
-      .end((Response response) => {
+      .end((Response response) => () {
         response.bodyString.should.equal("hello");
       });
 
   request(router)
     .post("/")
-      .end((Response response) => {
+      .end((Response response) => () {
         response.bodyString.should.not.equal("hello");
       });
 }
@@ -359,13 +359,13 @@ unittest {
   router.post("*", &sayHello);
   request(router)
     .post("/")
-      .end((Response response) => {
+      .end((Response response) => () {
         response.bodyString.should.equal("hello");
       });
 
   request(router)
     .get("/")
-      .end((Response response) => {
+      .end((Response response) => () {
         response.bodyString.should.not.equal("hello");
       });
 }
@@ -382,13 +382,13 @@ unittest {
   router.patch("*", &sayHello);
   request(router)
     .patch("/")
-      .end((Response response) => {
+      .end((Response response) => () {
         response.bodyString.should.equal("hello");
       });
 
   request(router)
     .get("/")
-      .end((Response response) => {
+      .end((Response response) => () {
         response.bodyString.should.not.equal("hello");
       });
 }
@@ -405,13 +405,13 @@ unittest {
   router.put("*", &sayHello);
   request(router)
     .put("/")
-      .end((Response response) => {
+      .end((Response response) => () {
         response.bodyString.should.equal("hello");
       });
 
   request(router)
     .get("/")
-      .end((Response response) => {
+      .end((Response response) => () {
         response.bodyString.should.not.equal("hello");
       });
 }
@@ -428,13 +428,13 @@ unittest {
   router.delete_("*", &sayHello);
   request(router)
     .delete_("/")
-      .end((Response response) => {
+      .end((Response response) => () {
         response.bodyString.should.equal("hello");
       });
 
   request(router)
     .get("/")
-      .end((Response response) => {
+      .end((Response response) => () {
         response.bodyString.should.not.equal("hello");
       });
 }
@@ -452,13 +452,13 @@ unittest {
 
   request(router)
     .customMethod!(HTTPMethod.ACL)("/")
-      .end((Response response) => {
+      .end((Response response) => () {
         response.bodyString.should.equal("hello");
       });
 
   request(router)
     .get("/")
-      .end((Response response) => {
+      .end((Response response) => () {
         response.bodyString.should.not.equal("hello");
       });
 }
@@ -514,7 +514,7 @@ unittest {
 
   request(router)
     .post("/")
-    .end((Response response) => {
+    .end((Response response) => () {
       response.bodyRaw.should.equal(cast(ubyte[]) [0,1,2]);
     });
 }
@@ -569,7 +569,7 @@ unittest {
 
   request(router)
     .get("/")
-      .end((Response response) => {
+      .end((Response response) => () {
         response.bodyJson["key"].to!string.should.equal("value");
       });
 }
