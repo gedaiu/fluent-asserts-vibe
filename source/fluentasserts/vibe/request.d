@@ -195,7 +195,7 @@ final class RequestRouter {
   }
 
   void end() {
-    end((Response response) => { });
+    end((Response response) => () { });
   }
 
   void end(T)(T callback) @trusted {
