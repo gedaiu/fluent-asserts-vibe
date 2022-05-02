@@ -65,9 +65,11 @@ string jsonToString(Json value, size_t level) {
   }
 
   if(value.type == Json.Type.object) {
-    auto keys = value.keys.sort;
+    auto keys = value.keys
+      .sort
+      .filter!(key => value[key].type != Json.Type.null_ && value[key].type != Json.Type.undefined);
 
-    if(keys.length == 0) {
+    if(keys.empty) {
       return `{}`;
     }
 
@@ -90,7 +92,7 @@ string jsonToString(Json value, size_t level) {
   }
 
   if(value.type == Json.Type.float_) {
-    return format("%.10f", value.to!double).strip("0");
+    return format("%.10f", value.to!double).strip("0").strip(".");
   }
 
   return value.to!string;
@@ -176,7 +178,6 @@ unittest {
 
   obj.nestedKeys.should.containOnly(["key1", "key2", "key3.item1", "key3.item2.item4", "key3.item2.item5.item6"]);
 }
-
 
 /// Get all keys from nested objects inside an array
 unittest {
@@ -298,9 +299,17 @@ version(unittest) {
   import std.string;
 }
 
-/// It should be able to compare 2 empty json objects
+/// Two sepparate json objects are equal
 unittest {
   Json.emptyObject.should.equal(Json.emptyObject);
+}
+
+/// An json object with an undefined value is iqual to an empty object json with no values
+unittest {
+  auto value = Json.emptyObject;
+  value["key"] = Json();
+
+  value.should.equal(Json.emptyObject);
 }
 
 /// It should be able to compare an empty object with an empty array

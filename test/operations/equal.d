@@ -62,24 +62,58 @@ alias s = Spec!({
     });
   }
 
-  alias NumericTypes = AliasSeq!(byte, ubyte, short, ushort, int, uint, long, ulong, float, double, real);
+  alias IntegerTypes = AliasSeq!(byte, ubyte, short, ushort, int, uint, long, ulong);
 
-  static foreach(Type; NumericTypes) {
+  static foreach(Type; IntegerTypes) {
     describe("using " ~ Type.stringof ~ " values", {
       Type testValue;
       Type otherTestValue;
 
-      static if(is(ifloat == Type) || is(idouble == Type) || is(ireal == Type)) {
-        before({
-          testValue = 40i;
-          otherTestValue = 50i;
-        });
-      } else {
-        before({
-          testValue = cast(Type) 40;
-          otherTestValue = cast(Type) 50;
-        });
-      }
+      before({
+        testValue = cast(Type) 40;
+        otherTestValue = cast(Type) 50;
+      });
+
+      it("should be able to compare two exact values", {
+        expect(Json(testValue)).to.equal(testValue);
+        expect(testValue).to.equal(Json(testValue));
+      });
+
+      it("should be able to check if two values are not equal", {
+        expect(Json(testValue)).to.not.equal(otherTestValue);
+        expect(testValue).to.not.equal(Json(otherTestValue));
+      });
+
+      it("should throw an exception with a detailed message when the strings are not equal", {
+        auto msg = ({
+          expect(Json(testValue)).to.equal(otherTestValue);
+        }).should.throwException!TestException.msg;
+
+        msg.split("\n")[0].should.equal(testValue.to!string ~ ` should equal ` ~ otherTestValue.to!string ~ `. ` ~ testValue.to!string ~ ` is not equal to ` ~ otherTestValue.to!string ~ `.`);
+      });
+
+      it("should throw an exception with a detailed message when the strings should not be equal", {
+        auto msg = ({
+          expect(Json(testValue)).to.not.equal(testValue);
+        }).should.throwException!TestException.msg;
+
+        msg.split("\n")[0].should.equal(testValue.to!string ~ ` should not equal ` ~ testValue.to!string ~ `. ` ~ testValue.to!string ~ ` is equal to ` ~ testValue.to!string ~ `.`);
+      });
+    });
+  }
+
+
+  alias FloatTypes = AliasSeq!(float, double, real);
+
+  static foreach(Type; FloatTypes) {
+    describe("using " ~ Type.stringof ~ " values", {
+      Type testValue;
+      Type otherTestValue;
+
+      before({
+        testValue = cast(Type) 40;
+        otherTestValue = cast(Type) 50;
+      });
 
       it("should be able to compare two exact values", {
         expect(Json(testValue)).to.equal(testValue);
