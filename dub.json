@@ -4,11 +4,11 @@
     "Szabo Bogdan"
   ],
   "description": "Fluent assertions for Vibe.d",
-  "copyright": "Copyright © 2020, Szabo Bogdan",
+  "copyright": "Copyright © 2022, Szabo Bogdan",
   "license": "MIT",
   "homepage": "http://fluentasserts.szabobogdan.com/",
   "dependencies": {
-    "fluent-asserts":"~>0.14.0-alpha.11",
+    "fluent-asserts":"*",
     "vibe-d:data": "*",
     "vibe-d:http": "*"
   },
