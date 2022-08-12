@@ -98,6 +98,23 @@ string jsonToString(Json value, size_t level) {
   return value.to!string;
 }
 
+/// it does not serialize undefined properties
+unittest {
+  auto obj = `{ "a": 1 }`.parseJsonString;
+
+  obj.remove("a");
+
+  obj.jsonToString.should.equal(`{}`);
+}
+
+/// it does not serialize null properties
+unittest {
+  auto obj = Json.emptyObject;
+
+  obj["a"] = Json(null);
+
+  obj.jsonToString.should.equal(`{}`);
+}
 
 /// it should convert a double to a string
 unittest {
@@ -223,6 +240,10 @@ Json[string] flatten(Json object) @trusted {
 
     if(element[1].type == Json.Type.object) {
       foreach(string key, value; element[1].byKeyValue) {
+        if(value.type == Json.Type.null_ || value.type == Json.Type.undefined) {
+          continue;
+        }
+
         string nextKey = key;
 
         if(element[0] != "") {
@@ -269,6 +290,24 @@ unittest {
   result["key3.item1"].should.equal("3");
   result["key3.item2.item4"].should.equal(Json.emptyObject);
   result["key3.item2.item5.item6"].should.equal(Json.emptyObject);
+}
+
+/// it ignores the null values
+unittest {
+  auto obj = Json.emptyObject;
+  obj["key1"] = Json(null);
+
+  auto result = obj.flatten;
+  result.byKeyValue.map!(a => a.key).should.containOnly([]);
+}
+
+/// it ignores the undefined values
+unittest {
+  auto obj = Json.emptyObject;
+  obj["key1"] = Json();
+
+  auto result = obj.flatten;
+  result.byKeyValue.map!(a => a.key).should.containOnly([]);
 }
 
 auto unpackJsonArray(T : U[], U)(Json data) if(!isArray!U && isBasicType!U) {
