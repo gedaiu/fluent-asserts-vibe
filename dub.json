@@ -9,8 +9,7 @@
   "homepage": "http://fluentasserts.szabobogdan.com/",
   "dependencies": {
     "fluent-asserts":"*",
-    "vibe-d:data": "*",
-    "vibe-d:http": "*"
+    "vibe-d": "*"
   },
   "configurations": [
     {
