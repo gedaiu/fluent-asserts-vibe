@@ -8,20 +8,184 @@ import vibe.http.form;
 import vibe.data.json;
 
 import vibe.stream.memory;
+import vibe.core.stream;
+import vibe.container.internal.utilallocator;
+import vibe.internal.interfaceproxy;
 
 import std.conv, std.string, std.array;
 import std.algorithm, std.conv;
 import std.stdio;
 import std.format;
 import std.exception;
+import std.datetime;
 
 import fluentasserts.core.base;
 import fluentasserts.core.results;
 
 //@safe:
 
-RequestRouter request(URLRouter router)
-{
+class MockConnectionStream {
+@safe:
+  MockStream stream = new MockStream();
+
+  @property bool connected() const {
+    return true;
+  }
+
+  @property bool dataAvailableForRead() {
+    return false;
+  }
+
+  @property bool empty() {
+    return true;
+  }
+
+  @property size_t leastSize() {
+    return 0;
+  }
+
+  void close () {}
+  bool waitForData(Duration timeout = Duration.max()) { return true; }
+  void finalize() {}
+  void flush() {}
+
+  const(ubyte)[] peek() {
+    return stream.peek;
+  }
+
+  ulong read(scope ubyte[] dst, IOMode mode) {
+    return stream.read(dst, mode);
+  }
+
+  ulong read(scope ubyte[] dst) {
+    return stream.read(dst);
+  }
+
+  ulong write (scope const(ubyte)[] bytes, IOMode mode) {
+    return stream.write(bytes, mode);
+  }
+
+  ulong write (scope const(ubyte)[] bytes) {
+    return stream.write(bytes);
+  }
+
+  ulong write (scope const(char)[] bytes) {
+    return stream.write(bytes);
+  }
+}
+
+class MockStream {
+@safe:
+  ubyte[] data;
+
+  @property bool dataAvailableForRead() {
+    return false;
+  }
+
+  @property bool empty() {
+    return true;
+  }
+
+  @property size_t leastSize() {
+    return 0;
+  }
+
+  void close () {}
+  void waitForData(Duration timeout = Duration.max()) {}
+  void finalize() {}
+  void flush() {}
+  const(ubyte)[] peek() {
+    assert(false, "not implemented");
+  }
+
+  ulong read(scope ubyte[] dst, IOMode mode) {
+    assert(false, "not implemented");
+  }
+
+  ulong read(scope ubyte[] dst) {
+    assert(false, "not implemented");
+  }
+
+  ulong write (scope const(ubyte)[] bytes, IOMode mode) {
+    data ~= bytes;
+
+    return bytes.length;
+  }
+
+  ulong write (scope const(ubyte)[] bytes) {
+    data ~= bytes;
+
+    return bytes.length;
+  }
+
+  ulong write (scope const(char)[] bytes) {
+    data ~= bytes;
+
+    return bytes.length;
+  }
+}
+
+class MockInputStream: InputStream {
+  @safe:
+    ubyte[] data;
+
+    this(ubyte[] data) {
+      this.data = data;
+    }
+
+    bool dataAvailableForRead() {
+      return data.length > 0;
+    }
+
+    bool empty() {
+      return data.length == 0;
+    }
+
+    size_t leastSize() {
+      return data.length;
+    }
+
+    const(ubyte)[] peek() {
+      return data;
+    }
+
+    ulong read(scope ubyte[] dst, IOMode mode) {
+      size_t i;
+
+      while(i < dst.length && i < data.length) {
+        dst[i] = data[i];
+        i++;
+      }
+
+      data = data[i..$];
+
+      return i;
+    }
+}
+
+HTTPServerRequest _createTestHTTPServerRequest(URL url, HTTPMethod method)
+@safe {
+  auto ret = createTestHTTPServerRequest(url, method);
+  ret.tls = false;
+  ret.bodyReader = new MockInputStream([]);
+
+  return ret;
+}
+
+HTTPServerResponse _createTestHTTPServerResponse(StreamProxy m_conn, ConnectionStreamProxy m_rawConnection)
+@safe {
+	import vibe.stream.wrapper : createProxyStream;
+	import vibe.http.internal.http1.server : HTTP1ServerExchange;
+
+	HTTPServerSettings settings;
+
+	auto exchange = new HTTP1ServerExchange(m_conn, m_rawConnection);
+	auto ret = new HTTPServerResponse(exchange, settings, () @trusted { return vibeThreadAllocator(); } ());
+
+	return ret;
+}
+
+RequestRouter request(URLRouter router) {
   return new RequestRouter(router);
 }
 
@@ -36,7 +200,6 @@ final class RequestRouter {
     string[string] headers;
 
     string responseBody;
-    string requestBody;
   }
 
   ///
@@ -51,7 +214,14 @@ final class RequestRouter {
     dst.writeFormData(data);
     header("Content-Type", "application/x-www-form-urlencoded");
 
-    return send(dst.data);
+    import std.stdio;
+    preparedRequest.bodyReader = new MockInputStream(cast(ubyte[]) dst.data.dup);
+
+    foreach(string key, value; data) {
+      preparedRequest.form[key] = value;
+    }
+
+    return this;
   }
 
   /// Send data to the server. You can send strings, Json or any other object
@@ -59,13 +229,12 @@ final class RequestRouter {
   RequestRouter send(T)(T data) {
     static if (is(T == string))
     {
-      requestBody = data;
+      preparedRequest.bodyReader = new MockInputStream(cast(ubyte[]) data);
       return this;
     }
     else static if (is(T == Json))
     {
-      requestBody = data.toPrettyString;
-      () @trusted { preparedRequest.bodyReader = createMemoryStream(cast(ubyte[]) requestBody); }();
+      preparedRequest.bodyReader = new MockInputStream(cast(ubyte[]) data.toPrettyString);
       preparedRequest.json = data;
       return this;
     }
@@ -117,7 +286,7 @@ final class RequestRouter {
 
   /// ditto
   RequestRouter customMethod(HTTPMethod method)(URL url) {
-    preparedRequest = createTestHTTPServerRequest(url, method);
+    preparedRequest = _createTestHTTPServerRequest(url, method);
     preparedRequest.host = url.host;
 
     foreach(name, value; headers) {
@@ -203,31 +372,23 @@ final class RequestRouter {
     import vibe.inet.webform;
     import vibe.stream.memory;
 
-    auto data = new ubyte[50000];
+    auto stream = new MockStream();
+    auto connection = new MockConnectionStream();
 
-    static if(__traits(compiles, createMemoryStream(data) )) {
-      MemoryStream stream = createMemoryStream(data);
-    } else {
-      MemoryStream stream = new MemoryStream(data);
-    }
+    InterfaceProxy!Stream m_conn = stream;
+    InterfaceProxy!ConnectionStream m_rawConnection = connection;
 
-    HTTPServerResponse res = createTestHTTPServerResponse(stream);
+    HTTPServerResponse res = _createTestHTTPServerResponse(interfaceProxy!Stream(m_conn), interfaceProxy!ConnectionStream(m_rawConnection));
     res.statusCode = 404;
-
-    static if(__traits(compiles, createMemoryStream(data) )) {
-      preparedRequest.bodyReader = createMemoryStream(cast(ubyte[]) requestBody);
-    } else {
-      preparedRequest.bodyReader = new MemoryStream(cast(ubyte[]) requestBody);
-    }
 
     router.handleRequest(preparedRequest, res);
 
-    if(res.bytesWritten == 0 && data[0] == 0) {
+    if(stream.data.length == 0) {
       enum notFound = "HTTP/1.1 404 No Content\r\n\r\n";
-      data = cast(ubyte[]) notFound;
+      stream.data = cast(ubyte[]) notFound;
     }
 
-    auto response = new Response(data, res.bytesWritten);
+    auto response = new Response(stream.data, res.bytesWritten);
 
     callback(response)();
 
@@ -580,8 +741,7 @@ unittest {
 
   void respondStatus(HTTPServerRequest, HTTPServerResponse res)
   {
-    res.statusCode = 200;
-    res.writeBody("");
+    res.writeBody("", 200, "plain/text");
   }
 
   router.get("*", &respondStatus);
