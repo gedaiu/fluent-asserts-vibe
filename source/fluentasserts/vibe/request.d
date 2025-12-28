@@ -20,7 +20,8 @@ import std.exception;
 import std.datetime;
 
 import fluentasserts.core.base;
-import fluentasserts.core.results;
+import fluentasserts.core.evaluation.eval : Evaluation;
+import fluentasserts.results.source.result : SourceResult;
 
 //@safe:
 
@@ -298,8 +299,8 @@ final class RequestRouter {
 
   RequestRouter expectHeaderExist(string name, const string file = __FILE__, const size_t line = __LINE__) {
     void localExpectHeaderExist(Response res) {
-      auto result = expect(res.headers.keys, file, line).to.contain(name);
-      result.message = new MessageResult("Response header `" ~ name ~ "` is missing.");
+      expect(res.headers.keys, file, line).to.contain(name)
+        .because("response header `" ~ name ~ "` is missing");
     }
 
     expected ~= &localExpectHeaderExist;
@@ -311,9 +312,8 @@ final class RequestRouter {
     expectHeaderExist(name, file, line);
 
     void localExpectedHeader(Response res) {
-      auto result = expect(res.headers[name], file, line).to.equal(value);
-      result.message = new MessageResult("Response header `" ~ name ~ "` has an unexpected value. Expected `"
-        ~ value ~ "` != `" ~ res.headers[name].to!string ~ "`");
+      expect(res.headers[name], file, line).to.equal(value)
+        .because("response header `" ~ name ~ "` has an unexpected value");
     }
 
     expected ~= &localExpectedHeader;
@@ -324,13 +324,12 @@ final class RequestRouter {
   RequestRouter expectHeaderContains(string name, string value, const string file = __FILE__, const size_t line = __LINE__) {
     expectHeaderExist(name, file, line);
 
-    void expectHeaderContains(Response res) {
-      auto result = expect(res.headers[name], file, line).contain(value);
-      result.message = new MessageResult("Response header `" ~ name ~ "` has an unexpected value. Expected `"
-        ~ value ~ "` not found in `" ~ res.headers[name].to!string ~ "`");
+    void localExpectHeaderContains(Response res) {
+      expect(res.headers[name], file, line).to.contain(value)
+        .because("response header `" ~ name ~ "` has an unexpected value");
     }
 
-    expected ~= &expectHeaderContains;
+    expected ~= &localExpectHeaderContains;
 
     return this;
   }
@@ -343,12 +342,14 @@ final class RequestRouter {
       }
 
       if(code != res.statusCode) {
-        IResult[] results = [ cast(IResult) new MessageResult("Invalid status code."),
-                              cast(IResult) new ExpectedActualResult(code.to!string ~ " - " ~ httpStatusText(code),
-                                                                     res.statusCode.to!string ~ " - " ~ httpStatusText(res.statusCode)),
-                              cast(IResult) new SourceResult(file, line) ];
+        Evaluation evaluation;
+        evaluation.isEvaluated = true;
+        evaluation.source = SourceResult.create(file, line);
+        evaluation.result.addText("Invalid status code.");
+        evaluation.result.expected.put(code.to!string ~ " - " ~ httpStatusText(code));
+        evaluation.result.actual.put(res.statusCode.to!string ~ " - " ~ httpStatusText(res.statusCode));
 
-        throw new TestException(results, file, line);
+        throw new TestException(evaluation);
       }
     }
 
@@ -757,7 +758,7 @@ unittest {
       .post("/")
       .expectStatusCode(200)
         .end();
-  }).should.throwException!TestException.msg.should.startWith("Invalid status code.");
+  }).should.throwException!TestException.msg.should.contain("Invalid status code.");
 }
 
 
@@ -786,14 +787,14 @@ unittest {
       .post("/")
       .expectHeader("some-header", "some-value")
         .end();
-  }).should.throwAnyException.msg.should.contain("Response header `some-header` is missing.");
+  }).should.throwAnyException.msg.should.contain("response header `some-header` is missing");
 
   ({
     request(router)
       .get("/")
       .expectHeader("some-header", "other-value")
         .end();
-  }).should.throwAnyException.msg.should.contain("Response header `some-header` has an unexpected value");
+  }).should.throwAnyException.msg.should.contain("response header `some-header` has an unexpected value");
 
   // Check if a header exists
   request(router)
@@ -807,7 +808,7 @@ unittest {
       .post("/")
       .expectHeaderExist("some-header")
         .end();
-  }).should.throwAnyException.msg.should.contain("Response header `some-header` is missing.");
+  }).should.throwAnyException.msg.should.contain("response header `some-header` is missing");
 
   // Check if a header contains a string
   request(router)
@@ -820,5 +821,5 @@ unittest {
       .get("/")
       .expectHeaderContains("some-header", "other")
         .end();
-  }).should.throwAnyException.msg.should.contain("Response header `some-header` has an unexpected value.");
+  }).should.throwAnyException.msg.should.contain("response header `some-header` has an unexpected value");
 }
