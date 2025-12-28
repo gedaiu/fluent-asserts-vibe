@@ -27,3 +27,4 @@ dub.selections.json
 test/unit-threaded/trial.json
 test/unit-threaded/unit-threaded-example
 .DS_Store
+fluent-asserts-vibe-test-unittest
