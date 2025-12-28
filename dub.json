@@ -8,7 +8,7 @@
   "license": "MIT",
   "homepage": "http://fluentasserts.szabobogdan.com/",
   "dependencies": {
-    "fluent-asserts":"*",
+    "fluent-asserts": "*",
     "vibe-d": "*"
   },
   "configurations": [
@@ -17,6 +17,15 @@
       "sourcePaths": [
         "source"
       ]
+    },
+    {
+      "name": "unittest",
+      "sourcePaths": [
+        "source"
+      ],
+      "dependencies": {
+        "silly": "*"
+      }
     },
     {
       "name": "trial",
