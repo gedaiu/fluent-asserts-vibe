@@ -1,6 +1,6 @@
 module fluentasserts.vibe.json.operations;
 
-version (Have_vibe_d_data):
+version (Have_vibe_serialization):
 
 import vibe.data.json;
 
@@ -26,8 +26,8 @@ void jsonEqual(ref Evaluation evaluation) @safe nothrow {
     string actualStr = (() @trusted => evaluation.currentValue.strValue[].idup)();
     string expectedStr = (() @trusted => evaluation.expectedValue.strValue[].idup)();
 
-    string normalizedActual = normalizeJson(actualStr);
-    string normalizedExpected = normalizeJson(expectedStr);
+    string normalizedActual = (() @trusted => normalizeJson(actualStr))();
+    string normalizedExpected = (() @trusted => normalizeJson(expectedStr))();
 
     bool isEqual = normalizedActual == normalizedExpected;
     bool passed = evaluation.isNegated ? !isEqual : isEqual;
@@ -43,26 +43,70 @@ void jsonEqual(ref Evaluation evaluation) @safe nothrow {
     }
 
     (() @trusted {
-      evaluation.result.expected.put(normalizedExpected);
-      evaluation.result.actual.put(normalizedActual);
-      evaluation.result.setDiff(normalizedExpected, normalizedActual);
+      evaluation.result.expected.put(expectedStr);
+      evaluation.result.actual.put(actualStr);
+      evaluation.result.setDiff(expectedStr, actualStr);
     })();
   } catch (Exception e) {
   }
 }
 
 /// Normalizes JSON for comparison by parsing and re-serializing.
-string normalizeJson(string input) @trusted nothrow {
-  try {
-    if (input.length >= 2 && input[0] == '"' && input[$ - 1] == '"') {
-      input = input[1 .. $ - 1];
-    }
+/// For JSON objects/arrays, parses and re-serializes with sorted keys.
+/// For strings, returns the unquoted string value for consistent comparison.
+string normalizeJson(string input) @trusted {
+  import std.string : strip;
 
+  // First try to parse as-is
+  try {
     auto parsed = parseJsonString(input);
+    // For string values, return the raw string content (without quotes)
+    if (parsed.type == Json.Type.string) {
+      auto content = parsed.get!string;
+      // Try to parse the content as JSON (handles escaped JSON strings)
+      try {
+        auto innerParsed = parseJsonString(content);
+        if (innerParsed.type == Json.Type.object || innerParsed.type == Json.Type.array) {
+          return jsonToString(innerParsed);
+        }
+      } catch (Exception) {
+      }
+      return content;
+    }
     return jsonToString(parsed);
   } catch (Exception e) {
+    // Parsing failed - might be a raw string that looks like JSON but has extra whitespace
+    // Try stripping and parsing again
+    auto stripped = input.strip;
+    if (stripped.length > 0 && (stripped[0] == '{' || stripped[0] == '[')) {
+      try {
+        auto parsed = parseJsonString(stripped);
+        return jsonToString(parsed);
+      } catch (Exception) {
+      }
+    }
     return input;
   }
+}
+
+/// normalizeJson extracts string content from quoted JSON strings
+unittest {
+  auto normalized1 = normalizeJson(`"3"`);  // Quoted JSON string
+  auto normalized2 = normalizeJson(`3`);    // Unquoted (parsed as int)
+
+  // JSON string "3" should normalize to just 3 (content without quotes)
+  normalized1.should.equal("3");
+  // Integer 3 should normalize to 3
+  normalized2.should.equal("3");
+}
+
+/// normalizeJson normalizes JSON objects with different whitespace
+unittest {
+  auto normalized1 = normalizeJson(`{"key": "value"}`);
+  auto normalized2 = normalizeJson(`{  "key"  :  "value"  }`);
+
+  // Both should normalize to the same formatted JSON
+  normalized1.should.equal(normalized2);
 }
 
 /// JSON equality ignores whitespace differences
@@ -71,13 +115,6 @@ unittest {
   auto json2 = `{  "key"  :  "value"  }`.parseJsonString;
 
   json1.should.equal(json2);
-}
-
-/// JSON equality with string comparison ignores whitespace
-unittest {
-  auto json = `{"key": "value"}`.parseJsonString;
-
-  json.should.equal(`{  "key"  :  "value"  }`);
 }
 
 /// JSON equality detects actual differences

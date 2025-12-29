@@ -1,6 +1,6 @@
 module fluentasserts.vibe.json;
 
-version (Have_vibe_d_data):
+version (Have_vibe_serialization):
 
 public import fluentasserts.vibe.json.helpers;
 public import fluentasserts.vibe.json.operations;
@@ -18,6 +18,8 @@ static this() {
   Registry.instance.register!(Json, Json)("equal", &jsonEqual);
   Registry.instance.register!(Json, string)("equal", &jsonEqual);
   Registry.instance.register!(string, Json)("equal", &jsonEqual);
+  Registry.instance.register!(Json, immutable(char)[])("equal", &jsonEqual);
+  Registry.instance.register!(immutable(char)[], Json)("equal", &jsonEqual);
 }
 
 version(unittest) {

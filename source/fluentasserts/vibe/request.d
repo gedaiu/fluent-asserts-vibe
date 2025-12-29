@@ -7,122 +7,46 @@ import vibe.http.router;
 import vibe.http.form;
 import vibe.data.json;
 
-import vibe.stream.memory;
 import vibe.core.stream;
-import vibe.container.internal.utilallocator;
-import vibe.internal.interfaceproxy;
+import vibe.stream.memory : MemoryOutputStream, createMemoryOutputStream;
 
 import std.conv, std.string, std.array;
 import std.algorithm, std.conv;
 import std.stdio;
 import std.format;
 import std.exception;
-import std.datetime;
 
 import fluentasserts.core.base;
 import fluentasserts.core.evaluation.eval : Evaluation;
+import fluentasserts.core.memory.heapstring : HeapData;
 import fluentasserts.results.source.result : SourceResult;
 
 //@safe:
 
-class MockConnectionStream {
-@safe:
-  MockStream stream = new MockStream();
-
-  @property bool connected() const {
-    return true;
+/// Helper to put an integer into HeapData without GC allocation
+private void putInt(ref HeapData!ubyte builder, int value) @trusted @nogc nothrow {
+  if (value < 0) {
+    builder.put(cast(ubyte)'-');
+    value = -value;
   }
 
-  @property bool dataAvailableForRead() {
-    return false;
+  if (value == 0) {
+    builder.put(cast(ubyte)'0');
+    return;
   }
 
-  @property bool empty() {
-    return true;
+  // Max int is 10 digits
+  ubyte[10] digits;
+  size_t count = 0;
+
+  while (value > 0) {
+    digits[count++] = cast(ubyte)('0' + (value % 10));
+    value /= 10;
   }
 
-  @property size_t leastSize() {
-    return 0;
-  }
-
-  void close () {}
-  bool waitForData(Duration timeout = Duration.max()) { return true; }
-  void finalize() {}
-  void flush() {}
-
-  const(ubyte)[] peek() {
-    return stream.peek;
-  }
-
-  ulong read(scope ubyte[] dst, IOMode mode) {
-    return stream.read(dst, mode);
-  }
-
-  ulong read(scope ubyte[] dst) {
-    return stream.read(dst);
-  }
-
-  ulong write (scope const(ubyte)[] bytes, IOMode mode) {
-    return stream.write(bytes, mode);
-  }
-
-  ulong write (scope const(ubyte)[] bytes) {
-    return stream.write(bytes);
-  }
-
-  ulong write (scope const(char)[] bytes) {
-    return stream.write(bytes);
-  }
-}
-
-class MockStream {
-@safe:
-  ubyte[] data;
-
-  @property bool dataAvailableForRead() {
-    return false;
-  }
-
-  @property bool empty() {
-    return true;
-  }
-
-  @property size_t leastSize() {
-    return 0;
-  }
-
-  void close () {}
-  void waitForData(Duration timeout = Duration.max()) {}
-  void finalize() {}
-  void flush() {}
-  const(ubyte)[] peek() {
-    assert(false, "not implemented");
-  }
-
-  ulong read(scope ubyte[] dst, IOMode mode) {
-    assert(false, "not implemented");
-  }
-
-  ulong read(scope ubyte[] dst) {
-    assert(false, "not implemented");
-  }
-
-  ulong write (scope const(ubyte)[] bytes, IOMode mode) {
-    data ~= bytes;
-
-    return bytes.length;
-  }
-
-  ulong write (scope const(ubyte)[] bytes) {
-    data ~= bytes;
-
-    return bytes.length;
-  }
-
-  ulong write (scope const(char)[] bytes) {
-    data ~= bytes;
-
-    return bytes.length;
+  // Reverse and append
+  foreach_reverse (i; 0 .. count) {
+    builder.put(digits[i]);
   }
 }
 
@@ -173,17 +97,11 @@ HTTPServerRequest _createTestHTTPServerRequest(URL url, HTTPMethod method)
   return ret;
 }
 
-HTTPServerResponse _createTestHTTPServerResponse(StreamProxy m_conn, ConnectionStreamProxy m_rawConnection)
+HTTPServerResponse _createTestHTTPServerResponse(MemoryOutputStream stream)
 @safe {
-	import vibe.stream.wrapper : createProxyStream;
-	import vibe.http.internal.http1.server : HTTP1ServerExchange;
+	import vibe.http.server : createTestHTTPServerResponse, TestHTTPResponseMode;
 
-	HTTPServerSettings settings;
-
-	auto exchange = new HTTP1ServerExchange(m_conn, m_rawConnection);
-	auto ret = new HTTPServerResponse(exchange, settings, () @trusted { return vibeThreadAllocator(); } ());
-
-	return ret;
+	return createTestHTTPServerResponse(stream, null, TestHTTPResponseMode.bodyOnly);
 }
 
 RequestRouter request(URLRouter router) {
@@ -371,25 +289,46 @@ final class RequestRouter {
   void end(T)(T callback) @trusted {
     import vibe.stream.operations : readAllUTF8;
     import vibe.inet.webform;
-    import vibe.stream.memory;
+    import vibe.http.status : httpStatusText;
 
-    auto stream = new MockStream();
-    auto connection = new MockConnectionStream();
+    auto stream = createMemoryOutputStream();
 
-    InterfaceProxy!Stream m_conn = stream;
-    InterfaceProxy!ConnectionStream m_rawConnection = connection;
-
-    HTTPServerResponse res = _createTestHTTPServerResponse(interfaceProxy!Stream(m_conn), interfaceProxy!ConnectionStream(m_rawConnection));
+    HTTPServerResponse res = _createTestHTTPServerResponse(stream);
     res.statusCode = 404;
 
     router.handleRequest(preparedRequest, res);
 
-    if(stream.data.length == 0) {
+    // Build HTTP response manually since we use bodyOnly mode
+    // Using HeapData to avoid GC allocations
+    auto responseBuilder = HeapData!ubyte.create(4096);
+
+    // Status line: "HTTP/1.1 XXX Status Text\r\n"
+    responseBuilder.put(cast(const(ubyte)[])"HTTP/1.1 ");
+    putInt(responseBuilder, res.statusCode);
+    responseBuilder.put(cast(ubyte)' ');
+    responseBuilder.put(cast(const(ubyte)[])httpStatusText(res.statusCode));
+    responseBuilder.put(cast(const(ubyte)[])"\r\n");
+
+    // Headers
+    foreach (k, v; res.headers.byKeyValue) {
+      responseBuilder.put(cast(const(ubyte)[])k);
+      responseBuilder.put(cast(const(ubyte)[])": ");
+      responseBuilder.put(cast(const(ubyte)[])v);
+      responseBuilder.put(cast(const(ubyte)[])"\r\n");
+    }
+    responseBuilder.put(cast(const(ubyte)[])"\r\n");
+
+    // Body
+    ubyte[] bodyData = stream.data.dup;
+    responseBuilder.put(bodyData);
+
+    ubyte[] data = responseBuilder[].dup;
+    if (data.length == 0 || !res.headerWritten) {
       enum notFound = "HTTP/1.1 404 No Content\r\n\r\n";
-      stream.data = cast(ubyte[]) notFound;
+      data = cast(ubyte[]) notFound.dup;
     }
 
-    auto response = new Response(stream.data, res.bytesWritten);
+    auto response = new Response(data, bodyData.length);
 
     callback(response)();
 

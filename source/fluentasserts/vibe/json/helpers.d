@@ -1,6 +1,6 @@
 module fluentasserts.vibe.json.helpers;
 
-version (Have_vibe_d_data):
+version (Have_vibe_serialization):
 
 import std.algorithm : map, sort;
 import std.array : array;

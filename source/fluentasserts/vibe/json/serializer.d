@@ -1,6 +1,6 @@
 module fluentasserts.vibe.json.serializer;
 
-version (Have_vibe_d_data):
+version (Have_vibe_serialization):
 
 import std.algorithm : filter, map, sort;
 import std.array : array, join, replicate;
@@ -34,9 +34,11 @@ string jsonToString(Json value, size_t level) {
   }
 
   if (value.type == Json.Type.object) {
-    auto sortedKeys = value.keys.sort.filter!(key =>
-      value[key].type != Json.Type.null_ && value[key].type != Json.Type.undefined
-    );
+    auto sortedKeys = value.byKeyValue
+      .filter!(kv => kv.value.type != Json.Type.null_ && kv.value.type != Json.Type.undefined)
+      .map!(kv => kv.key)
+      .array
+      .sort;
 
     if (sortedKeys.empty) {
       return `{}`;
@@ -59,7 +61,11 @@ string jsonToString(Json value, size_t level) {
     return "undefined";
   }
 
-  if (value.type == Json.Type.string) {
+  if (value.type == Json.Type.string && level == 0) {
+    return value.to!string;
+  }
+
+    if (value.type == Json.Type.string && level > 0) {
     return `"` ~ value.to!string ~ `"`;
   }
 
@@ -137,4 +143,15 @@ unittest {
   import fluentasserts.core.base;
 
   Json.emptyArray.jsonToString.should.equal("[]");
+}
+
+/// serializes object with string keys and string values
+unittest {
+  import fluentasserts.core.base;
+
+  auto obj = Json.emptyObject;
+  obj["name"] = "John";
+  obj["city"] = "Berlin";
+
+  obj.jsonToString.should.equal("{\n  \"city\": \"Berlin\",\n  \"name\": \"John\"\n}");
 }
