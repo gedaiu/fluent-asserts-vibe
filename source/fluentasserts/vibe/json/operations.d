@@ -43,12 +43,16 @@ void jsonEqual(ref Evaluation evaluation) @safe nothrow {
     }
 
     (() @trusted {
-      evaluation.result.expected.put(expectedStr);
-      evaluation.result.actual.put(actualStr);
-      evaluation.result.setDiff(expectedStr, actualStr);
+      evaluation.result.expected.put(normalizedExpected);
+      evaluation.result.actual.put(normalizedActual);
+      evaluation.result.setDiff(normalizedExpected, normalizedActual);
     })();
   } catch (Exception e) {
   }
+}
+
+private size_t min(size_t a, size_t b) pure nothrow @safe {
+  return a < b ? a : b;
 }
 
 /// Normalizes JSON for comparison by parsing and re-serializing.
@@ -87,6 +91,17 @@ string normalizeJson(string input) @trusted {
     }
     return input;
   }
+}
+
+/// normalizeJson handles Json[] serialization format
+unittest {
+  // This is the format that Json[] produces when serialized by the default serializer
+  auto input = "[{\n  \"key\": \"value\"\n}]";
+  auto normalized = normalizeJson(input);
+
+  // After normalization, it should match the jsonToString format
+  auto expected = "[\n  {\n    \"key\": \"value\"\n  }\n]";
+  normalized.should.equal(expected);
 }
 
 /// normalizeJson extracts string content from quoted JSON strings
@@ -161,4 +176,28 @@ unittest {
   auto json2 = `{"key": "value2"}`.parseJsonString;
 
   json1.should.not.equal(json2);
+}
+
+/// Compare Json (containing array) with Json[] D array - mirrors response.bodyJson["features"].should.equal([site1])
+unittest {
+  auto site1 = Json.emptyObject;
+  site1["_id"] = "000000000000000000000001";
+  site1["name"] = "site1";
+
+  auto responseJson = Json.emptyObject;
+  responseJson["features"] = Json([site1]);
+
+  // This is the exact pattern from the failing test
+  responseJson["features"].should.equal([site1]);
+}
+
+/// Compare Json[] D array with Json (containing array)
+unittest {
+  auto obj = Json.emptyObject;
+  obj["key"] = "value";
+
+  Json[] dArray = [obj];
+  auto jsonArray = Json([obj]);
+
+  dArray.should.equal(jsonArray);
 }

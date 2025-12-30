@@ -168,4 +168,67 @@ alias s = Spec!({
       msg[3].strip.should.equal("Actual:true");
     });
   });
+
+  describe("comparing Json with Json[] arrays", {
+    it("should compare a Json array value with a Json[] D array", {
+      auto obj = Json.emptyObject;
+      obj["key"] = "value";
+
+      Json[] expectedArray = [obj];
+      auto jsonArray = Json([obj]);
+
+      expect(jsonArray).to.equal(expectedArray);
+    });
+
+    it("should compare a Json array value with a Json[] D array containing complex objects", {
+      auto obj1 = Json.emptyObject;
+      obj1["_id"] = "000000000000000000000001";
+      obj1["name"] = "test";
+      obj1["nested"] = Json.emptyObject;
+      obj1["nested"]["value"] = 42;
+
+      Json[] expectedArray = [obj1];
+      auto jsonArray = Json([obj1]);
+
+      expect(jsonArray).to.equal(expectedArray);
+    });
+
+    it("should fail when Json array value does not match Json[] D array", {
+      auto obj1 = Json.emptyObject;
+      obj1["key"] = "value1";
+
+      auto obj2 = Json.emptyObject;
+      obj2["key"] = "value2";
+
+      Json[] expectedArray = [obj2];
+      auto jsonArray = Json([obj1]);
+
+      ({
+        expect(jsonArray).to.equal(expectedArray);
+      }).should.throwException!TestException;
+    });
+
+    it("should compare Json[] D array with Json array value", {
+      auto obj = Json.emptyObject;
+      obj["key"] = "value";
+
+      Json[] dArray = [obj];
+      auto jsonArray = Json([obj]);
+
+      expect(dArray).to.equal(jsonArray);
+    });
+
+    it("should compare Json array from response with Json[] literal using should syntax", {
+      // This mirrors: response.bodyJson["features"].should.equal([ site1 ]);
+      auto site1 = Json.emptyObject;
+      site1["_id"] = "000000000000000000000001";
+      site1["name"] = "site1";
+
+      auto responseJson = Json.emptyObject;
+      responseJson["features"] = Json([site1]);
+
+      // This is the exact pattern from the failing test
+      responseJson["features"].should.equal([site1]);
+    });
+  });
 });

@@ -14,8 +14,11 @@ import fluentasserts.results.serializers.heap_registry : HeapSerializerRegistry;
 
 static this() {
   HeapSerializerRegistry.instance.register!Json(&jsonToHeapString);
+  HeapSerializerRegistry.instance.register!(Json[])(&jsonArrayToHeapString);
 
   Registry.instance.register!(Json, Json)("equal", &jsonEqual);
+  Registry.instance.register!(Json, Json[])("equal", &jsonEqual);
+  Registry.instance.register!(Json[], Json)("equal", &jsonEqual);
   Registry.instance.register!(Json, string)("equal", &jsonEqual);
   Registry.instance.register!(string, Json)("equal", &jsonEqual);
   Registry.instance.register!(Json, immutable(char)[])("equal", &jsonEqual);

@@ -16,6 +16,20 @@ HeapString jsonToHeapString(Json value) @trusted {
   return toHeapString(jsonToString(value));
 }
 
+HeapString jsonArrayToHeapString(Json[] values) @trusted {
+  return toHeapString(jsonToString(Json(values)));
+}
+
+/// it serializes an array to the same string as jsonArrayToHeapString
+unittest {
+  import fluentasserts.core.base;
+
+  auto jsonList = Json([Json(1), Json(2), Json(3)]);
+  auto dList = [Json(1), Json(2), Json(3)];
+
+  jsonList.jsonToHeapString.should.equal(dList.jsonArrayToHeapString);
+}
+
 string jsonToString(Json value) {
   return jsonToString(value, 0);
 }
