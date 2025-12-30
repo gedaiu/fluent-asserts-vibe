@@ -111,56 +111,48 @@ unittest {
 /// Takes a nested Json object and moves the values to a Json assoc array where the key
 /// is the path from the original object to that value
 Json[string] flatten(Json object) @trusted {
+  import std.array : Appender;
+
   Json[string] elements;
 
-  auto root = tuple("", object);
-  Tuple!(string, Json)[] queue = [ root ];
+  Appender!(Tuple!(string, Json)[]) queue;
+  queue.reserve(32);
+  queue ~= tuple("", object);
 
-  while(queue.length > 0) {
-    auto element = queue[0];
+  size_t queueIndex = 0;
 
-    if(element[0] != "") {
-      if(element[1].type != Json.Type.object && element[1].type != Json.Type.array) {
-        elements[element[0]] = element[1];
-      }
+  while (queueIndex < queue[].length) {
+    auto element = queue[][queueIndex];
+    queueIndex++;
 
-      if(element[1].type == Json.Type.object && element[1].length == 0) {
-        elements[element[0]] = element[1];
-      }
+    immutable key = element[0];
+    auto value = element[1];
 
-      if(element[1].type == Json.Type.array && element[1].length == 0) {
-        elements[element[0]] = element[1];
+    if (key.length > 0) {
+      immutable valueType = value.type;
+      if (valueType != Json.Type.object && valueType != Json.Type.array) {
+        elements[key] = value;
+      } else if (value.length == 0) {
+        elements[key] = value;
       }
     }
 
-    if(element[1].type == Json.Type.object) {
-      foreach(string key, value; element[1].byKeyValue) {
-        if(value.type == Json.Type.null_ || value.type == Json.Type.undefined) {
+    if (value.type == Json.Type.object) {
+      foreach (string childKey, childValue; value.byKeyValue) {
+        if (childValue.type == Json.Type.null_ || childValue.type == Json.Type.undefined) {
           continue;
         }
 
-        string nextKey = key;
-
-        if(element[0] != "") {
-          nextKey = element[0] ~ "." ~ nextKey;
-        }
-
-        queue ~= tuple(nextKey, value);
+        string nextKey = key.length > 0 ? key ~ "." ~ childKey : childKey;
+        queue ~= tuple(nextKey, childValue);
       }
-    }
-
-    if(element[1].type == Json.Type.array) {
+    } else if (value.type == Json.Type.array) {
       size_t index;
-
-      foreach(value; element[1].byValue) {
-        string nextKey = element[0] ~ "[" ~ index.to!string ~ "]";
-
-        queue ~= tuple(nextKey, value);
+      foreach (childValue; value.byValue) {
+        queue ~= tuple(key ~ "[" ~ index.to!string ~ "]", childValue);
         index++;
       }
     }
-
-    queue = queue[1..$];
   }
 
   return elements;
@@ -206,7 +198,7 @@ unittest {
 }
 
 auto unpackJsonArray(T : U[], U)(Json data) if(!isArray!U && isBasicType!U) {
-  return data.byValue.map!(a => a.to!U).array.dup;
+  return data.byValue.map!(a => a.to!U).array;
 }
 
 auto unpackJsonArray(T : U[], U)(Json data) if(!isArray!U && is(Unqual!U == Json)) {

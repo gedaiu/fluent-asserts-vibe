@@ -3,10 +3,9 @@ module fluentasserts.vibe.json.serializer;
 version (Have_vibe_serialization):
 
 import std.algorithm : filter, map, sort;
-import std.array : array, join, replicate;
+import std.array : Appender, array;
 import std.conv : to;
-import std.format : format;
-import std.string : strip;
+import std.format : sformat;
 
 import vibe.data.json;
 
@@ -31,63 +30,152 @@ unittest {
 }
 
 string jsonToString(Json value) {
-  return jsonToString(value, 0);
+  Appender!string result;
+  result.reserve(256);
+  jsonToStringImpl(value, 0, result);
+  return result[];
 }
 
-string jsonToString(Json value, size_t level) {
+// Pre-computed indentation strings for levels 0-16
+private immutable string[] indentCache = [
+  "",
+  "  ",
+  "    ",
+  "      ",
+  "        ",
+  "          ",
+  "            ",
+  "              ",
+  "                ",
+  "                  ",
+  "                    ",
+  "                      ",
+  "                        ",
+  "                          ",
+  "                            ",
+  "                              ",
+  "                                ",
+];
+
+private string getIndent(size_t level) pure nothrow @safe {
+  if (level < indentCache.length) {
+    return indentCache[level];
+  }
+  // Fallback for deeply nested JSON (rare)
+  char[] result = new char[level * 2];
+  result[] = ' ';
+  return (() @trusted => cast(string)result)();
+}
+
+private void jsonToStringImpl(Json value, size_t level, ref Appender!string result) {
   if (value.type == Json.Type.array) {
     if (value.length == 0) {
-      return `[]`;
+      result ~= "[]";
+      return;
     }
 
-    string prefix = replicate("  ", level + 1);
-    string endPrefix = replicate("  ", level);
-    auto elements = value.byValue.map!(a => prefix ~ jsonToString(a, level + 1)).array;
+    immutable prefix = getIndent(level + 1);
+    immutable endPrefix = getIndent(level);
 
-    return "[\n" ~ elements.join(",\n") ~ "\n" ~ endPrefix ~ "]";
+    result ~= "[\n";
+    bool first = true;
+    foreach (element; value.byValue) {
+      if (!first) {
+        result ~= ",\n";
+      }
+      first = false;
+      result ~= prefix;
+      jsonToStringImpl(element, level + 1, result);
+    }
+    result ~= "\n";
+    result ~= endPrefix;
+    result ~= "]";
+    return;
   }
 
   if (value.type == Json.Type.object) {
-    auto sortedKeys = value.byKeyValue
-      .filter!(kv => kv.value.type != Json.Type.null_ && kv.value.type != Json.Type.undefined)
-      .map!(kv => kv.key)
-      .array
-      .sort;
-
-    if (sortedKeys.empty) {
-      return `{}`;
+    // Collect and sort keys, filtering null/undefined
+    string[] sortedKeys;
+    foreach (kv; value.byKeyValue) {
+      if (kv.value.type != Json.Type.null_ && kv.value.type != Json.Type.undefined) {
+        sortedKeys ~= kv.key;
+      }
     }
 
-    string prefix = replicate("  ", level + 1);
-    string endPrefix = replicate("  ", level);
-    auto entries = sortedKeys.map!(key =>
-      prefix ~ `"` ~ key ~ `": ` ~ jsonToString(value[key], level + 1)
-    ).array;
+    if (sortedKeys.length == 0) {
+      result ~= "{}";
+      return;
+    }
 
-    return "{\n" ~ entries.join(",\n") ~ "\n" ~ endPrefix ~ "}";
+    sortedKeys.sort();
+
+    immutable prefix = getIndent(level + 1);
+    immutable endPrefix = getIndent(level);
+
+    result ~= "{\n";
+    bool first = true;
+    foreach (key; sortedKeys) {
+      if (!first) {
+        result ~= ",\n";
+      }
+      first = false;
+      result ~= prefix;
+      result ~= `"`;
+      result ~= key;
+      result ~= `": `;
+      jsonToStringImpl(value[key], level + 1, result);
+    }
+    result ~= "\n";
+    result ~= endPrefix;
+    result ~= "}";
+    return;
   }
 
   if (value.type == Json.Type.null_) {
-    return "null";
+    result ~= "null";
+    return;
   }
 
   if (value.type == Json.Type.undefined) {
-    return "undefined";
+    result ~= "undefined";
+    return;
   }
 
   if (value.type == Json.Type.string && level == 0) {
-    return value.to!string;
+    result ~= value.to!string;
+    return;
   }
 
-    if (value.type == Json.Type.string && level > 0) {
-    return `"` ~ value.to!string ~ `"`;
+  if (value.type == Json.Type.string && level > 0) {
+    result ~= `"`;
+    result ~= value.to!string;
+    result ~= `"`;
+    return;
   }
 
   if (value.type == Json.Type.float_) {
-    return format("%.10f", value.to!double).strip("0").strip(".");
+    result ~= formatFloat(value.to!double);
+    return;
   }
 
-  return value.to!string;
+  result ~= value.to!string;
+}
+
+// Efficient float formatting without trailing zeros
+private string formatFloat(double value) {
+  char[32] buf;
+  auto formatted = sformat(buf[], "%.10f", value);
+
+  // Strip trailing zeros and decimal point
+  size_t end = formatted.length;
+  while (end > 0 && formatted[end - 1] == '0') {
+    end--;
+  }
+  if (end > 0 && formatted[end - 1] == '.') {
+    end--;
+  }
+
+  return formatted[0 .. end].idup;
 }
 
 /// it does not serialize undefined properties

@@ -23,11 +23,9 @@ string normalizeJsonString(string jsonStr) @trusted {
 /// Compares two JSON values by normalizing them first, then showing a diff on failure.
 void jsonEqual(ref Evaluation evaluation) @safe nothrow {
   try {
-    string actualStr = (() @trusted => evaluation.currentValue.strValue[].idup)();
-    string expectedStr = (() @trusted => evaluation.expectedValue.strValue[].idup)();
-
-    string normalizedActual = (() @trusted => normalizeJson(actualStr))();
-    string normalizedExpected = (() @trusted => normalizeJson(expectedStr))();
+    // Use slice directly without idup when possible - only allocate if needed for error output
+    string normalizedActual = (() @trusted => normalizeJson(cast(string)evaluation.currentValue.strValue[]))();
+    string normalizedExpected = (() @trusted => normalizeJson(cast(string)evaluation.expectedValue.strValue[]))();
 
     bool isEqual = normalizedActual == normalizedExpected;
     bool passed = evaluation.isNegated ? !isEqual : isEqual;
@@ -51,44 +49,60 @@ void jsonEqual(ref Evaluation evaluation) @safe nothrow {
   }
 }
 
-private size_t min(size_t a, size_t b) pure nothrow @safe {
-  return a < b ? a : b;
-}
-
 /// Normalizes JSON for comparison by parsing and re-serializing.
 /// For JSON objects/arrays, parses and re-serializes with sorted keys.
 /// For strings, returns the unquoted string value for consistent comparison.
 string normalizeJson(string input) @trusted {
-  import std.string : strip;
+  if (input.length == 0) {
+    return input;
+  }
 
-  // First try to parse as-is
+  // Quick check for simple cases to avoid parsing overhead
+  immutable firstChar = input[0];
+  immutable bool looksLikeJson = firstChar == '{' || firstChar == '[' || firstChar == '"';
+
+  if (!looksLikeJson) {
+    // Check if it's whitespace-prefixed JSON
+    size_t i = 0;
+    while (i < input.length && (input[i] == ' ' || input[i] == '\t' || input[i] == '\n' || input[i] == '\r')) {
+      i++;
+    }
+    if (i == input.length) {
+      return input;
+    }
+    immutable strippedFirst = input[i];
+    if (strippedFirst != '{' && strippedFirst != '[' && strippedFirst != '"') {
+      // Not JSON-like, try parsing as primitive
+      try {
+        auto parsed = parseJsonString(input);
+        return jsonToString(parsed);
+      } catch (Exception) {
+        return input;
+      }
+    }
+    // Strip and continue with the stripped version
+    input = input[i .. $];
+  }
+
   try {
     auto parsed = parseJsonString(input);
     // For string values, return the raw string content (without quotes)
     if (parsed.type == Json.Type.string) {
       auto content = parsed.get!string;
-      // Try to parse the content as JSON (handles escaped JSON strings)
-      try {
-        auto innerParsed = parseJsonString(content);
-        if (innerParsed.type == Json.Type.object || innerParsed.type == Json.Type.array) {
-          return jsonToString(innerParsed);
+      // Only try to parse as nested JSON if it looks like JSON
+      if (content.length > 0 && (content[0] == '{' || content[0] == '[')) {
+        try {
+          auto innerParsed = parseJsonString(content);
+          if (innerParsed.type == Json.Type.object || innerParsed.type == Json.Type.array) {
+            return jsonToString(innerParsed);
+          }
+        } catch (Exception) {
         }
-      } catch (Exception) {
       }
       return content;
     }
     return jsonToString(parsed);
-  } catch (Exception e) {
-    // Parsing failed - might be a raw string that looks like JSON but has extra whitespace
-    // Try stripping and parsing again
-    auto stripped = input.strip;
-    if (stripped.length > 0 && (stripped[0] == '{' || stripped[0] == '[')) {
-      try {
-        auto parsed = parseJsonString(stripped);
-        return jsonToString(parsed);
-      } catch (Exception) {
-      }
-    }
+  } catch (Exception) {
     return input;
   }
 }
