@@ -262,6 +262,7 @@ final class RequestRouter {
         Evaluation evaluation;
         evaluation.isEvaluated = true;
         evaluation.source = SourceResult.create(file, line);
+        evaluation.addOperationName("expectStatusCode");
         evaluation.result.addText("Invalid status code.");
         evaluation.result.expected.put(code.to!string ~ " - " ~ httpStatusText(code));
         evaluation.result.actual.put(res.statusCode.to!string ~ " - " ~ httpStatusText(res.statusCode));
