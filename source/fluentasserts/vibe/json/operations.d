@@ -13,7 +13,7 @@ import fluentasserts.vibe.json.serializer : jsonToString;
 string normalizeJsonString(string jsonStr) @trusted {
   try {
     auto parsed = parseJsonString(jsonStr);
-    return jsonToString(parsed);
+    return jsonToString(parsed)[].idup;
   } catch (Exception e) {
     return jsonStr;
   }
@@ -75,7 +75,7 @@ string normalizeJson(string input) @trusted {
       // Not JSON-like, try parsing as primitive
       try {
         auto parsed = parseJsonString(input);
-        return jsonToString(parsed);
+        return jsonToString(parsed)[].idup;
       } catch (Exception) {
         return input;
       }
@@ -94,14 +94,14 @@ string normalizeJson(string input) @trusted {
         try {
           auto innerParsed = parseJsonString(content);
           if (innerParsed.type == Json.Type.object || innerParsed.type == Json.Type.array) {
-            return jsonToString(innerParsed);
+            return jsonToString(innerParsed)[].idup;
           }
         } catch (Exception) {
         }
       }
       return content;
     }
-    return jsonToString(parsed);
+    return jsonToString(parsed)[].idup;
   } catch (Exception) {
     return input;
   }

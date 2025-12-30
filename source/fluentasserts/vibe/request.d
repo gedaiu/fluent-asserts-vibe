@@ -75,16 +75,15 @@ class MockInputStream: InputStream {
     }
 
     ulong read(scope ubyte[] dst, IOMode mode) {
-      size_t i;
+      import core.stdc.string : memcpy;
+      size_t toRead = dst.length < data.length ? dst.length : data.length;
 
-      while(i < dst.length && i < data.length) {
-        dst[i] = data[i];
-        i++;
+      if (toRead > 0) {
+        (() @trusted => memcpy(dst.ptr, data.ptr, toRead))();
+        data = data[toRead .. $];
       }
 
-      data = data[i..$];
-
-      return i;
+      return toRead;
     }
 }
 
@@ -354,53 +353,85 @@ class Response {
 
   /// Instantiate the Response
   this(ubyte[] data, ulong len) {
-    this.originalStringData = (cast(char[])data).toStringz.to!string.dup;
+    // Find header/body separator without converting entire buffer to string
+    ptrdiff_t bodyIndex = -1;
+    if (data.length >= 4) {
+      foreach (i; 0 .. data.length - 3) {
+        if (data[i] == '\r' && data[i+1] == '\n' && data[i+2] == '\r' && data[i+3] == '\n') {
+          bodyIndex = i;
+          break;
+        }
+      }
+    }
 
-    auto bodyIndex = originalStringData.indexOf("\r\n\r\n");
+    assert(bodyIndex != -1, "Invalid response data");
 
-    assert(bodyIndex != -1, "Invalid response data: \n" ~ originalStringData ~ "\n\n");
+    // Parse headers from the header section only
+    auto headerSection = cast(char[])data[0 .. bodyIndex];
+    this.originalStringData = headerSection.idup;
 
-    auto headers = originalStringData[0 .. bodyIndex].split("\r\n").array;
+    // Find first line end for status line
+    ptrdiff_t firstLineEnd = headerSection.indexOf("\r\n");
+    if (firstLineEnd == -1) firstLineEnd = headerSection.length;
 
-    responseLine = headers[0];
-    statusCode = headers[0].split(" ")[1].to!int;
+    responseLine = headerSection[0 .. firstLineEnd].idup;
 
-    foreach (i; 1 .. headers.length) {
-      auto header = headers[i].split(": ");
-      this.headers[header[0]] = header[1];
+    // Parse status code directly from status line
+    auto statusLine = headerSection[0 .. firstLineEnd];
+    ptrdiff_t spaceIdx = statusLine.indexOf(' ');
+    if (spaceIdx != -1) {
+      auto afterFirstSpace = statusLine[spaceIdx + 1 .. $];
+      ptrdiff_t secondSpace = afterFirstSpace.indexOf(' ');
+      if (secondSpace == -1) secondSpace = afterFirstSpace.length;
+      statusCode = afterFirstSpace[0 .. secondSpace].to!int;
+    }
+
+    // Parse headers without splitting entire string
+    size_t pos = firstLineEnd + 2;
+    while (pos < headerSection.length) {
+      ptrdiff_t lineEnd = headerSection[pos .. $].indexOf("\r\n");
+      if (lineEnd == -1) lineEnd = headerSection.length - pos;
+
+      auto line = headerSection[pos .. pos + lineEnd];
+      ptrdiff_t colonIdx = line.indexOf(": ");
+      if (colonIdx != -1) {
+        this.headers[line[0 .. colonIdx].idup] = line[colonIdx + 2 .. $].idup;
+      }
+      pos += lineEnd + 2;
     }
 
     size_t start = bodyIndex + 4;
     size_t end = bodyIndex + 4 + len;
 
-    if("Transfer-Encoding" in this.headers && this.headers["Transfer-Encoding"] == "chunked") {
+    if ("Transfer-Encoding" in this.headers && this.headers["Transfer-Encoding"] == "chunked") {
+      // Pre-allocate for chunked data
+      import std.array : Appender;
+      Appender!(ubyte[]) chunkedBody;
+      chunkedBody.reserve(len);
 
-      while(start < end) {
-        size_t pos = data[start..end].assumeUTF.indexOf("\r\n").to!size_t;
-        if(pos == -1) {
-          break;
-        }
+      while (start < end) {
+        ptrdiff_t crlfPos = (cast(char[])data[start .. end]).indexOf("\r\n");
+        if (crlfPos == -1) break;
 
-        auto ln = data[start..start+pos].assumeUTF;
+        auto ln = cast(char[])data[start .. start + crlfPos];
         auto chunkSize = parse!size_t(ln, 16u);
 
-        if(chunkSize == 0) {
-          break;
-        }
+        if (chunkSize == 0) break;
 
-        start += pos + 2;
-        bodyRaw ~= data[start..start+chunkSize];
+        start += crlfPos + 2;
+        chunkedBody ~= data[start .. start + chunkSize];
         start += chunkSize + 2;
       }
+      bodyRaw = chunkedBody[];
       return;
     }
 
-    bodyRaw = data[start .. end];
+    bodyRaw = data[start .. end].dup;
   }
 
   /// get the body as a string
   string bodyString() {
-    return (cast(char[])bodyRaw).toStringz.to!string.dup;
+    return (cast(immutable(char)[])bodyRaw).idup;
   }
 
   /// get the body as a json object

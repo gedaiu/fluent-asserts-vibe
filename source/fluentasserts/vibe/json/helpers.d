@@ -108,6 +108,22 @@ unittest {
   obj.nestedKeys.should.containOnly(["key2", "key3[0]", "key3[1]", "key3[2].item5.item6", "key3[3]"]);
 }
 
+// Fast integer to string conversion without GC allocation
+private string uintToString(size_t value) pure nothrow @safe {
+  if (value == 0) return "0";
+
+  char[20] buf = void;
+  size_t pos = buf.length;
+
+  while (value > 0) {
+    pos--;
+    buf[pos] = cast(char)('0' + (value % 10));
+    value /= 10;
+  }
+
+  return buf[pos .. $].idup;
+}
+
 /// Takes a nested Json object and moves the values to a Json assoc array where the key
 /// is the path from the original object to that value
 Json[string] flatten(Json object) @trusted {
@@ -149,7 +165,7 @@ Json[string] flatten(Json object) @trusted {
     } else if (value.type == Json.Type.array) {
       size_t index;
       foreach (childValue; value.byValue) {
-        queue ~= tuple(key ~ "[" ~ index.to!string ~ "]", childValue);
+        queue ~= tuple(key ~ "[" ~ uintToString(index) ~ "]", childValue);
         index++;
       }
     }
