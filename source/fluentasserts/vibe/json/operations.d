@@ -6,6 +6,8 @@ import vibe.data.json;
 
 import fluentasserts.core.base;
 import fluentasserts.core.evaluation.eval : Evaluation;
+import fluentasserts.core.memory.heapstring : toHeapString;
+import fluentasserts.operations.equality.equal : setMultilineDiff;
 import fluentasserts.vibe.json.serializer : jsonToString;
 
 /// Normalizes a JSON string by parsing and re-serializing with consistent formatting.
@@ -27,6 +29,14 @@ void jsonEqual(ref Evaluation evaluation) @safe nothrow {
     string normalizedActual = (() @trusted => normalizeJson(cast(string)evaluation.currentValue.strValue[]))();
     string normalizedExpected = (() @trusted => normalizeJson(cast(string)evaluation.expectedValue.strValue[]))();
 
+    debug {
+      import std.stdio : writeln;
+      writeln("Normalized Actual JSON: ", normalizedActual);
+      writeln("Normalized Expected JSON: ", normalizedExpected);
+    }
+
+    evaluation.addOperationName("Json");
+
     bool isEqual = normalizedActual == normalizedExpected;
     bool passed = evaluation.isNegated ? !isEqual : isEqual;
 
@@ -43,8 +53,15 @@ void jsonEqual(ref Evaluation evaluation) @safe nothrow {
     (() @trusted {
       evaluation.result.expected.put(normalizedExpected);
       evaluation.result.actual.put(normalizedActual);
-      evaluation.result.setDiff(normalizedExpected, normalizedActual);
+
+      // Update strValue with normalized JSON for diff display
+      evaluation.expectedValue.strValue = toHeapString(normalizedExpected);
+      evaluation.currentValue.strValue = toHeapString(normalizedActual);
     })();
+
+    if (!evaluation.isNegated) {
+      setMultilineDiff(evaluation);
+    }
   } catch (Exception e) {
   }
 }
