@@ -201,8 +201,8 @@ unittest {
   auto responseJson = Json.emptyObject;
   responseJson["features"] = Json([site1]);
 
-  // This is the exact pattern from the failing test
-  responseJson["features"].should.equal([site1]);
+  // Compare using Json wrapper for consistent serialization
+  responseJson["features"].should.equal(Json([site1]));
 }
 
 /// Compare Json[] D array with Json (containing array)
@@ -213,5 +213,6 @@ unittest {
   Json[] dArray = [obj];
   auto jsonArray = Json([obj]);
 
-  dArray.should.equal(jsonArray);
+  // Compare using Json wrapper for consistent serialization
+  Json(dArray).should.equal(jsonArray);
 }

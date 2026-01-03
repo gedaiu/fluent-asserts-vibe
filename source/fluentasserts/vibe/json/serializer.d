@@ -3,20 +3,48 @@ module fluentasserts.vibe.json.serializer;
 version (Have_vibe_serialization):
 
 import std.algorithm : filter, map, sort;
-import std.array : array;
+import std.array : array, join, replicate;
 import std.conv : to;
+import std.format : format;
+import std.string : strip;
 
 import vibe.data.json;
 
 import fluentasserts.core.memory.heapstring : HeapString, toHeapString;
-import fluentasserts.core.conversion.toheapstring : toFloatingString;
+
+string escapeJsonString(string s) {
+  import std.array : appender;
+
+  auto result = appender!string();
+  result.reserve(s.length);
+
+  foreach (c; s) {
+    switch (c) {
+      case '"':  result ~= `\"`; break;
+      case '\\': result ~= `\\`; break;
+      case '\n': result ~= `\n`; break;
+      case '\r': result ~= `\r`; break;
+      case '\t': result ~= `\t`; break;
+      case '\b': result ~= `\b`; break;
+      case '\f': result ~= `\f`; break;
+      default:
+        if (c < 0x20) {
+          result ~= format(`\u%04x`, cast(uint) c);
+        } else {
+          result ~= c;
+        }
+    }
+  }
+
+  return result.data;
+}
 
 HeapString jsonToHeapString(Json value) @trusted {
-  return jsonToString(value);
+  return toHeapString(jsonToStringNative(value));
 }
 
 HeapString jsonArrayToHeapString(Json[] values) @trusted {
-  return jsonToString(Json(values));
+  return toHeapString(jsonToStringNative(Json(values)));
 }
 
 /// it serializes an array to the same string as jsonArrayToHeapString
@@ -30,170 +58,70 @@ unittest {
 }
 
 HeapString jsonToString(Json value) {
-  HeapString result;
-  result.reserve(256);
-  jsonToStringImpl(value, 0, result);
-  return result;
+  return toHeapString(jsonToStringNative(value));
 }
 
-// Pre-computed indentation strings for levels 0-16
-private immutable string[] indentCache = [
-  "",
-  "  ",
-  "    ",
-  "      ",
-  "        ",
-  "          ",
-  "            ",
-  "              ",
-  "                ",
-  "                  ",
-  "                    ",
-  "                      ",
-  "                        ",
-  "                          ",
-  "                            ",
-  "                              ",
-  "                                ",
-];
-
-private string getIndent(size_t level) pure nothrow @safe {
-  if (level < indentCache.length) {
-    return indentCache[level];
-  }
-  // Fallback for deeply nested JSON (rare)
-  char[] result = new char[level * 2];
-  result[] = ' ';
-  return (() @trusted => cast(string)result)();
+string jsonToStringNative(Json value) {
+  return jsonToStringImpl(value, 0);
 }
 
-private void jsonToStringImpl(Json value, size_t level, ref HeapString result) {
+string jsonToStringSlice(Json value) {
+  return jsonToStringImpl(value, 0);
+}
+
+private string jsonToStringImpl(Json value, size_t level) {
   if (value.type == Json.Type.array) {
     if (value.length == 0) {
-      result ~= "[]";
-      return;
+      return `[]`;
     }
 
-    immutable prefix = getIndent(level + 1);
-    immutable endPrefix = getIndent(level);
+    string prefix = replicate("  ", level + 1);
+    string endPrefix = replicate("  ", level);
+    auto elements = value.byValue.map!(a => prefix ~ jsonToStringImpl(a, level + 1)).array;
 
-    result ~= "[\n";
-    bool first = true;
-    foreach (element; value.byValue) {
-      if (!first) {
-        result ~= ",\n";
-      }
-      first = false;
-      result ~= prefix;
-      jsonToStringImpl(element, level + 1, result);
-    }
-    result ~= "\n";
-    result ~= endPrefix;
-    result ~= "]";
-    return;
+    return "[\n" ~ elements.join(",\n") ~ "\n" ~ endPrefix ~ "]";
   }
 
   if (value.type == Json.Type.object) {
-    // Use stack buffer for small objects, heap for large
-    enum STACK_KEYS_SIZE = 32;
-    string[STACK_KEYS_SIZE] stackKeys = void;
-    string[] sortedKeys;
-    size_t keyCount = 0;
-
+    string[] keys;
     foreach (kv; value.byKeyValue) {
       if (kv.value.type != Json.Type.null_ && kv.value.type != Json.Type.undefined) {
-        if (keyCount < STACK_KEYS_SIZE) {
-          stackKeys[keyCount] = kv.key;
-        } else if (keyCount == STACK_KEYS_SIZE) {
-          // Overflow to heap
-          sortedKeys = stackKeys[0 .. STACK_KEYS_SIZE].dup;
-          sortedKeys ~= kv.key;
-        } else {
-          sortedKeys ~= kv.key;
-        }
-        keyCount++;
+        keys ~= kv.key;
       }
     }
 
-    if (keyCount == 0) {
-      result ~= "{}";
-      return;
+    if (keys.length == 0) {
+      return `{}`;
     }
 
-    // Sort the appropriate array
-    if (keyCount <= STACK_KEYS_SIZE) {
-      stackKeys[0 .. keyCount].sort();
-    } else {
-      sortedKeys.sort();
-    }
+    keys.sort();
 
-    immutable prefix = getIndent(level + 1);
-    immutable endPrefix = getIndent(level);
+    string prefix = replicate("  ", level + 1);
+    string endPrefix = replicate("  ", level);
+    auto entries = keys.map!(key =>
+      prefix ~ `"` ~ key ~ `": ` ~ jsonToStringImpl(value[key], level + 1)
+    ).array;
 
-    result ~= "{\n";
-    bool first = true;
-
-    if (keyCount <= STACK_KEYS_SIZE) {
-      foreach (key; stackKeys[0 .. keyCount]) {
-        if (!first) {
-          result ~= ",\n";
-        }
-        first = false;
-        result ~= prefix;
-        result ~= `"`;
-        result ~= key;
-        result ~= `": `;
-        jsonToStringImpl(value[key], level + 1, result);
-      }
-    } else {
-      foreach (key; sortedKeys) {
-        if (!first) {
-          result ~= ",\n";
-        }
-        first = false;
-        result ~= prefix;
-        result ~= `"`;
-        result ~= key;
-        result ~= `": `;
-        jsonToStringImpl(value[key], level + 1, result);
-      }
-    }
-    result ~= "\n";
-    result ~= endPrefix;
-    result ~= "}";
-    return;
+    return "{\n" ~ entries.join(",\n") ~ "\n" ~ endPrefix ~ "}";
   }
 
   if (value.type == Json.Type.null_) {
-    result ~= "null";
-    return;
+    return "null";
   }
 
   if (value.type == Json.Type.undefined) {
-    result ~= "undefined";
-    return;
+    return "undefined";
   }
 
-  if (value.type == Json.Type.string && level == 0) {
-    result ~= value.to!string;
-    return;
-  }
-
-  if (value.type == Json.Type.string && level > 0) {
-    result ~= `"`;
-    result ~= value.to!string;
-    result ~= `"`;
-    return;
+  if (value.type == Json.Type.string) {
+    return `"` ~ escapeJsonString(value.to!string) ~ `"`;
   }
 
   if (value.type == Json.Type.float_) {
-    // Use 10 decimal precision for JSON serialization (matches original behavior)
-    auto floatStr = toFloatingString(value.to!double, 10);
-    result ~= floatStr[];
-    return;
+    return format("%.10f", value.to!double).strip("0").strip(".");
   }
 
-  result ~= value.to!string;
+  return value.to!string;
 }
 
 /// it does not serialize undefined properties
@@ -204,7 +132,7 @@ unittest {
 
   obj.remove("a");
 
-  obj.jsonToString[].should.equal(`{}`);
+  obj.jsonToStringNative.should.equal(`{}`);
 }
 
 /// it does not serialize null properties
@@ -215,15 +143,15 @@ unittest {
 
   obj["a"] = Json(null);
 
-  obj.jsonToString[].should.equal(`{}`);
+  obj.jsonToStringNative.should.equal(`{}`);
 }
 
 /// it should convert a double to a string
 unittest {
   import fluentasserts.core.base;
 
-  Json(2.3).jsonToString[].should.equal("2.3");
-  Json(59.0 / 15.0).jsonToString[].should.equal("3.9333333333");
+  Json(2.3).jsonToStringNative.should.equal("2.3");
+  Json(59.0 / 15.0).jsonToStringNative.should.equal("3.9333333333");
 }
 
 /// serializes object with sorted keys and 2-space indentation
@@ -235,7 +163,7 @@ unittest {
   obj["apple"] = 2;
   obj["mango"] = 3;
 
-  obj.jsonToString[].should.equal("{\n  \"apple\": 2,\n  \"mango\": 3,\n  \"zebra\": 1\n}");
+  obj.jsonToStringNative.should.equal("{\n  \"apple\": 2,\n  \"mango\": 3,\n  \"zebra\": 1\n}");
 }
 
 /// serializes nested objects with proper indentation
@@ -246,7 +174,7 @@ unittest {
   obj["outer"] = Json.emptyObject;
   obj["outer"]["inner"] = "value";
 
-  obj.jsonToString[].should.equal("{\n  \"outer\": {\n    \"inner\": \"value\"\n  }\n}");
+  obj.jsonToStringNative.should.equal("{\n  \"outer\": {\n    \"inner\": \"value\"\n  }\n}");
 }
 
 /// serializes arrays with proper indentation
@@ -255,14 +183,14 @@ unittest {
 
   auto arr = Json([Json(1), Json(2), Json(3)]);
 
-  arr.jsonToString[].should.equal("[\n  1,\n  2,\n  3\n]");
+  arr.jsonToStringNative.should.equal("[\n  1,\n  2,\n  3\n]");
 }
 
 /// serializes empty array
 unittest {
   import fluentasserts.core.base;
 
-  Json.emptyArray.jsonToString[].should.equal("[]");
+  Json.emptyArray.jsonToStringNative.should.equal("[]");
 }
 
 /// serializes object with string keys and string values
@@ -273,5 +201,52 @@ unittest {
   obj["name"] = "John";
   obj["city"] = "Berlin";
 
-  obj.jsonToString[].should.equal("{\n  \"city\": \"Berlin\",\n  \"name\": \"John\"\n}");
+  obj.jsonToStringNative.should.equal("{\n  \"city\": \"Berlin\",\n  \"name\": \"John\"\n}");
+}
+
+/// escapes special characters in strings
+unittest {
+  import fluentasserts.core.base;
+
+  Json("hello\nworld").jsonToStringNative.should.equal(`"hello\nworld"`);
+  Json("tab\there").jsonToStringNative.should.equal(`"tab\there"`);
+  Json(`quote"here`).jsonToStringNative.should.equal(`"quote\"here"`);
+  Json("back\\slash").jsonToStringNative.should.equal(`"back\\slash"`);
+}
+
+/// serializes complex object with escaped strings
+unittest {
+  import fluentasserts.core.base;
+
+  auto message = `{
+          "html":"<p>Hello ---,<\/p>\n\n<p>John just registered with the email leader@gmail.com at OGM. You can check their profile at<\/p>\n\n<p>/browse/profiles/000000000000000000000001<\/p>\n",
+          "isSent":false,
+          "actions":{"View profile":"/browse/profiles/000000000000000000000001"},
+          "text":"Hello ---,\nJohn just registered with the email leader@gmail.com at OGM. You can check their profile at\n/browse/profiles/000000000000000000000001",
+          "to":{"type":"","value":""},
+          "uniqueKey":"notification-user-new-000000000000000000000001",
+          "_id":"000000000000000000000001",
+          "type":"admin",
+          "subject":"There is a new user at OGM","sentOn":"0001-01-01T00:00:00+00:00",
+          "useGenericTemplate":true
+        }`.parseJsonString;
+
+  message.jsonToStringNative.should.equal(`{
+  "_id": "000000000000000000000001",
+  "actions": {
+    "View profile": "/browse/profiles/000000000000000000000001"
+  },
+  "html": "<p>Hello ---,</p>\n\n<p>John just registered with the email leader@gmail.com at OGM. You can check their profile at</p>\n\n<p>/browse/profiles/000000000000000000000001</p>\n",
+  "isSent": false,
+  "sentOn": "0001-01-01T00:00:00+00:00",
+  "subject": "There is a new user at OGM",
+  "text": "Hello ---,\nJohn just registered with the email leader@gmail.com at OGM. You can check their profile at\n/browse/profiles/000000000000000000000001",
+  "to": {
+    "type": "",
+    "value": ""
+  },
+  "type": "admin",
+  "uniqueKey": "notification-user-new-000000000000000000000001",
+  "useGenericTemplate": true
+}`);
 }
