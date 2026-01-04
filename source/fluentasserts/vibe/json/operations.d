@@ -29,12 +29,6 @@ void jsonEqual(ref Evaluation evaluation) @safe nothrow {
     string normalizedActual = (() @trusted => normalizeJson(cast(string)evaluation.currentValue.strValue[]))();
     string normalizedExpected = (() @trusted => normalizeJson(cast(string)evaluation.expectedValue.strValue[]))();
 
-    debug {
-      import std.stdio : writeln;
-      writeln("Normalized Actual JSON: ", normalizedActual);
-      writeln("Normalized Expected JSON: ", normalizedExpected);
-    }
-
     evaluation.addOperationName("Json");
 
     bool isEqual = normalizedActual == normalizedExpected;
