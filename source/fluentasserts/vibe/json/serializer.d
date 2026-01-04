@@ -69,7 +69,7 @@ string jsonToStringSlice(Json value) {
   return jsonToStringImpl(value, 0);
 }
 
-private string jsonToStringImpl(Json value, size_t level) {
+private string jsonToStringImpl(Json value, size_t level, bool inArray = false) {
   if (value.type == Json.Type.array) {
     if (value.length == 0) {
       return `[]`;
@@ -77,7 +77,7 @@ private string jsonToStringImpl(Json value, size_t level) {
 
     string prefix = replicate("  ", level + 1);
     string endPrefix = replicate("  ", level);
-    auto elements = value.byValue.map!(a => prefix ~ jsonToStringImpl(a, level + 1)).array;
+    auto elements = value.byValue.map!(a => prefix ~ jsonToStringImpl(a, level + 1, true)).array;
 
     return "[\n" ~ elements.join(",\n") ~ "\n" ~ endPrefix ~ "]";
   }
@@ -114,6 +114,11 @@ private string jsonToStringImpl(Json value, size_t level) {
   }
 
   if (value.type == Json.Type.string) {
+    // Don't wrap strings in quotes when at top level or inside arrays
+    // This makes comparison output more readable and consistent with D string arrays
+    if (level == 0 || inArray) {
+      return escapeJsonString(value.to!string);
+    }
     return `"` ~ escapeJsonString(value.to!string) ~ `"`;
   }
 
@@ -186,6 +191,15 @@ unittest {
   arr.jsonToStringNative.should.equal("[\n  1,\n  2,\n  3\n]");
 }
 
+/// serializes string arrays without quotes around elements (for consistency with D string arrays)
+unittest {
+  import fluentasserts.core.base;
+
+  auto arr = Json([Json("a"), Json("b"), Json("c")]);
+
+  arr.jsonToStringNative.should.equal("[\n  a,\n  b,\n  c\n]");
+}
+
 /// serializes empty array
 unittest {
   import fluentasserts.core.base;
@@ -204,14 +218,14 @@ unittest {
   obj.jsonToStringNative.should.equal("{\n  \"city\": \"Berlin\",\n  \"name\": \"John\"\n}");
 }
 
-/// escapes special characters in strings
+/// escapes special characters in strings (top-level strings are not wrapped in quotes)
 unittest {
   import fluentasserts.core.base;
 
-  Json("hello\nworld").jsonToStringNative.should.equal(`"hello\nworld"`);
-  Json("tab\there").jsonToStringNative.should.equal(`"tab\there"`);
-  Json(`quote"here`).jsonToStringNative.should.equal(`"quote\"here"`);
-  Json("back\\slash").jsonToStringNative.should.equal(`"back\\slash"`);
+  Json("hello\nworld").jsonToStringNative.should.equal(`hello\nworld`);
+  Json("tab\there").jsonToStringNative.should.equal(`tab\there`);
+  Json(`quote"here`).jsonToStringNative.should.equal(`quote\"here`);
+  Json("back\\slash").jsonToStringNative.should.equal(`back\\slash`);
 }
 
 /// serializes complex object with escaped strings
