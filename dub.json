@@ -4,7 +4,7 @@
     "Szabo Bogdan"
   ],
   "description": "Fluent assertions for Vibe.d",
-  "copyright": "Copyright © 2025, Szabo Bogdan",
+  "copyright": "Copyright © 2026, Szabo Bogdan",
   "license": "MIT",
   "homepage": "http://fluentasserts.szabobogdan.com/",
   "dependencies": {
@@ -24,7 +24,7 @@
         "source"
       ],
       "dependencies": {
-        "trial": "1.0.0-beta.1"
+        "trial": "1.0.0-beta.2"
       }
     },
     {
@@ -34,7 +34,7 @@
         "test/operations"
       ],
       "dependencies": {
-        "trial": "1.0.0-beta.1"
+        "trial": "1.0.0-beta.2"
       }
     }
   ]
