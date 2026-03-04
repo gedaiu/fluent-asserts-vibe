@@ -227,3 +227,29 @@ unittest {
   // Compare using Json wrapper for consistent serialization
   Json(dArray).should.equal(jsonArray);
 }
+
+/// Long JSON diff shows changed field name and values
+unittest {
+  import fluentasserts.core.lifecycle : recordEvaluation;
+  import std.string : indexOf;
+  import std.conv : to;
+
+  auto json1 = Json.emptyObject;
+  auto json2 = Json.emptyObject;
+
+  foreach (i; 0 .. 50) {
+    string key = "field" ~ i.to!string;
+    json1[key] = "value" ~ i.to!string;
+    json2[key] = "value" ~ i.to!string;
+  }
+  json2["field25"] = "different_value";
+
+  auto evaluation = ({
+    json1.should.equal(json2);
+  }).recordEvaluation;
+
+  auto fullMessage = evaluation.result.messageString[];
+  assert(fullMessage.indexOf("different_value") != -1, "Diff missing 'different_value'");
+  assert(fullMessage.indexOf("value25") != -1, "Diff missing original 'value25'");
+  assert(fullMessage.indexOf("field25") != -1, "Diff missing field name 'field25'");
+}
