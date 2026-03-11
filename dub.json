@@ -8,7 +8,7 @@
   "license": "MIT",
   "homepage": "http://fluentasserts.szabobogdan.com/",
   "dependencies": {
-    "fluent-asserts": "2.0.1",
+    "fluent-asserts": "<3.0.0",
     "vibe-d": "*"
   },
   "configurations": [
@@ -24,7 +24,7 @@
         "source"
       ],
       "dependencies": {
-        "trial": "1.0.1"
+        "trial": "<2.0.0"
       }
     },
     {
@@ -34,7 +34,7 @@
         "test/operations"
       ],
       "dependencies": {
-        "trial": "1.0.1"
+        "trial": "<2.0.0"
       }
     }
   ]
